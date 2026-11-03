@@ -157,8 +157,9 @@ if (flag("--role-server")) {
           if (typeof process.send !== "function") return send(res, 409, { ok: false, error: "실행기 없이 켜져 있어서 다시 켤 수 없어요" });
           const r = b.action === "apply" ? await updater.apply() : await updater.rollback();
           const restarting = r.updated !== false;
+          // 응답이 완전히 나간 뒤(연결이 닫힌 뒤)에 재시작한다. 곧바로 끊으면 프록시를 거치는 플러그인이 응답을 못 받는다
+          if (restarting) { let sent = false; const go = () => { if (sent) return; sent = true; setTimeout(() => process.send({ type: "restart" }), 1500); }; res.once("close", go); setTimeout(go, 5000); }
           send(res, 200, { ...r, restarting });
-          if (restarting) setTimeout(() => process.send({ type: "restart" }), 300);
           return;
         }
         return send(res, 400, { ok: false, error: "action은 check·apply·rollback이에요" });
