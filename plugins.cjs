@@ -300,8 +300,12 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
         results.push({ op: "order", name: "순서", count: plugins.length });
       } else if (o.op === "replaceAll") {
         if (!Array.isArray(o.plugins)) throw fail(400, "plugins 배열이 필요해요");
-        plugins = o.plugins.map((p) => ({ ...checkNew(p) }));
-        const names = new Set(); // 통째 바꾸기에서도 같은 이름 두 개는 허용(중복 정리는 따로 한다) — 형식만 확인
+        // 통째 바꾸기(백업 복원)는 옛 플러그인(머리말 이름이 다른 것 등)도 그대로 되돌릴 수 있어야 해서 형식만 확인한다
+        plugins = o.plugins.map((p) => {
+          if (!p || typeof p !== "object" || typeof p.name !== "string" || !p.name || typeof p.script !== "string") throw fail(400, "복원할 플러그인의 형식이 맞지 않아요(name·script 필요)");
+          if (Buffer.byteLength(p.script) > MAX_SCRIPT) throw fail(413, `'${p.name}'의 코드가 너무 커요`);
+          return { ...p };
+        });
         results.push({ op: "replaceAll", name: "전체", count: plugins.length });
       } else throw fail(400, `알 수 없는 작업이에요: ${o.op}`);
     }

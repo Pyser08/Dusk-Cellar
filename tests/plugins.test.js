@@ -254,3 +254,13 @@ test("export·replaceAll: 전체를 받아서 그대로 되돌릴 수 있다(백
     assert.equal(s.read("settings/app.json").plugins[0].realArg.k, "v");
   });
 });
+
+test("replaceAll: 머리말 이름이 다른 옛 플러그인도 그대로 복원하고, 형식이 틀리면 거절", async () => {
+  await withHost([plugin("a")], async (p, s) => {
+    const l = await p.list();
+    const legacy = { name: "legacy", script: "no header here", enabled: true };
+    await p.mutate({ expectListSha: l.listSha, ops: [{ op: "replaceAll", plugins: [legacy, plugin("a")] }] });
+    assert.deepEqual(s.read("settings/app.json").plugins.map((x) => x.name), ["legacy", "a"]);
+    await assert.rejects(p.mutate({ expectListSha: (await p.list()).listSha, ops: [{ op: "replaceAll", plugins: [{ name: "x" }] }] }), (e) => e.status === 400);
+  });
+});
