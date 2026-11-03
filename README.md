@@ -138,3 +138,10 @@ Node 기본 모듈만 써요(`npm install` 불필요).
 - `{action:"missing", keys:[…]}` → 서버에 없는 키만 돌려줘요(최대 5000개)
 - `{action:"put", entries:[{key, value(base64)}]}` → 한 번에 200개까지, 요청 본문 64MB까지
 - 서버가 실행 중이어도 쓸 수 있어요. 호스트가 알 수 없는 폴더면 501이에요.
+
+## 자체 업데이트 `/cellar/update` (POST, git clone 설치만)
+
+- `{action:"check"}` → 현재·최신 커밋, 새 변경 목록, `canApply`(고친 파일 없음·fast-forward 가능)
+- `{action:"apply"}` → `git merge --ff-only` → 모든 `.cjs`를 새 프로세스에서 불러와 보고, 실패하면 이전 커밋으로 되돌려요 → 응답 뒤 Cellar만 다시 켜요(실행기가 바뀌었으면 `fullRestart:true`, pm2 재시작 필요)
+- `{action:"rollback"}` → 직전 업데이트 이전 커밋으로 되돌림
+- 허용 저장소는 `Pyser08/dusk-cellar`만이에요. `git`이 없거나 clone이 아니면 501.

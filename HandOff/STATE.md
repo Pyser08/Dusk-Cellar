@@ -59,3 +59,6 @@
 - 호스트별: risuai=save/<hex(key)> 직접(임시→rename, fsync 없음) / risubard·pocketrisu=로컬 /api/assets/bulk-write(50개·24MB씩).
 - 시험: tests/assets.test.js (Cellar 65 통과). 진짜 서버로는 아직 확인 못 함.
 - 남은 일: 카드(.charx/png/risum) 서버측 풀기, 플러그인 쪽에서 미리 넣은 에셋으로 캐릭터 등록, Atelier UI, RisuBard 인덱스 직접 쓰기(재시작 필요) 모드, 사용자 실측(`node tools/fsync-bench.cjs ~/bench-tmp 1000 200`).
+
+## 자체 업데이트 (2026-11-03)
+- `update.cjs` + `POST /cellar/update`(check/apply/rollback), 실행기 IPC `restart`(Cellar만 즉시 재시작, 실패 횟수 초기화). features에 "update". 시험: tests/update.test.js(실제 git 저장소 사용). Cellar 71 통과. 서버 실물(pm2) 확인은 아직.

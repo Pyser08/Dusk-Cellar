@@ -84,7 +84,9 @@ if (flag("--role-server")) {
   const plugins = saveDir ? createPlugins({ dataDir, saveDir, risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
   const { createAssets } = require("./assets.cjs");
   const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
-  const features = () => ["mem", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) === "risubard" ? ["plugins"] : [])];
+  const { createUpdate } = require("./update.cjs");
+  const updater = createUpdate({ root: __dirname, dataDir, log });
+  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) === "risubard" ? ["plugins"] : [])];
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
   const readJson = (req, max = MAX_VALUE) => new Promise((resolve, reject) => {
     const limit = max + 64 * 1024;
@@ -146,6 +148,20 @@ if (flag("--role-server")) {
         if (b.action === "mutate") return send(res, 200, await plugins.mutate(b));
         if (b.action === "export") return send(res, 200, await plugins.exportAll(b));
         return send(res, 400, { ok: false, error: "action은 list·get·apply·mutate·export예요" });
+      }
+      // 자체 업데이트(update.cjs, git clone 설치). action: check · apply · rollback. apply·rollback은 응답 뒤 Cellar만 다시 켠다
+      if (url.pathname === "/cellar/update" && req.method === "POST") {
+        const b = await readJson(req);
+        if (b.action === "check") return send(res, 200, await updater.check());
+        if (b.action === "apply" || b.action === "rollback") {
+          if (typeof process.send !== "function") return send(res, 409, { ok: false, error: "실행기 없이 켜져 있어서 다시 켤 수 없어요" });
+          const r = b.action === "apply" ? await updater.apply() : await updater.rollback();
+          const restarting = r.updated !== false;
+          send(res, 200, { ...r, restarting });
+          if (restarting) setTimeout(() => process.send({ type: "restart" }), 300);
+          return;
+        }
+        return send(res, 400, { ok: false, error: "action은 check·apply·rollback이에요" });
       }
       // 에셋 빠른 쓰기(assets.cjs). action: status · missing · put (본문 한도 64MB)
       if (url.pathname === "/cellar/assets" && req.method === "POST") {
@@ -242,15 +258,19 @@ async function doRestore(id) {
   }
 }
 
-let dusk = null, fails = 0, restartTimer = null;
+let dusk = null, fails = 0, restartTimer = null, planned = false;
 function startDusk() {
   if (stopping || flag("--no-dusk")) return;
   const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", dataDir, "--save-dir", saveDir, "--keep", opt("--keep", "5"), "--risu-port", opt("--risu-port", process.env.PORT || "7777")];
   const t0 = Date.now();
   dusk = spawn(process.execPath, args, { stdio: ["ignore", "inherit", "inherit", "ipc"], env: process.env });
-  dusk.on("message", (m) => { if (m?.type === "restore" && typeof m.id === "string") doRestore(m.id); });
+  dusk.on("message", (m) => {
+    if (m?.type === "restore" && typeof m.id === "string") doRestore(m.id);
+    else if (m?.type === "restart" && !restoring && !stopping) { planned = true; fails = 0; log("업데이트·재시작 요청 — Dusk Cellar만 다시 켭니다"); dusk?.kill("SIGTERM"); }
+  });
   dusk.on("exit", (code) => {
     dusk = null;
+    if (planned && !stopping && !restoring) { planned = false; startDusk(); return; }
     if (stopping || restoring) return;
     if (code === 78) { log("Dusk Cellar를 켜지 못했어요(포트 사용 중). 리스는 그대로 돌아요."); return; }
     if (Date.now() - t0 > 60_000) fails = 0;   // 1분 넘게 잘 돌았으면 실패 횟수 초기화

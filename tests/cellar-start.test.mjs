@@ -82,7 +82,7 @@ test("기억 저장소 주소: 쓰기·읽기·목록·충돌·재전송·삭제
   let ch = run();
   try {
     const h = await health(p);
-    assert.deepEqual(h.features, ["mem", "backup"]);
+    assert.deepEqual(h.features, ["mem", "update", "backup"]);
     assert.equal((await call("GET", `${base}/${K}`)).status, 404);
     const w1 = await call("PUT", `${base}/${K}`, { value: '{"n":1}', baseRev: 0, opId: "a1" });
     assert.equal(w1.json.rev, 1);
@@ -129,7 +129,7 @@ test("백업·복원(HTTP): 리스를 멈췄다가 세이브를 되돌리고 다
   const post = async (b) => (await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) })).json();
   try {
     const h = await health(p);
-    assert.deepEqual(h.features, ["mem", "backup"]);
+    assert.deepEqual(h.features, ["mem", "update", "backup"]);
     assert.equal((await post({ action: "create", label: "수동" })).ok, true);
     let list;
     for (let i = 0; i < 50; i++) { list = await (await fetch(api)).json(); if (list.job?.finishedAt) break; await sleep(100); }
