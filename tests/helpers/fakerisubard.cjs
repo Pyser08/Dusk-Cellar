@@ -37,7 +37,7 @@ function setup({ where = "settings", plugins, indent = 2, others = { theme: "dar
 // 파일 지문 = 크기 + mtime(나노초) + 사이드카 내용(실제 RisuBard와 같다). 받아들인 상태와 다르면 '검토 대기'.
 async function fakeRisubard(saveDir, opts = {}) {
   const FILES = ["settings/app.json", "secrets/credentials.json"];
-  const calls = [];
+  const calls = [], assets = new Map();
   const fp = (rel) => {
     try { const p = path.join(saveDir, rel); const st = fs.statSync(p, { bigint: true }); let sc = ""; try { sc = fs.readFileSync(p + ".sha256", "utf8").trim(); } catch {} return `${st.size}:${st.mtimeNs}:${sc}`; } catch { return "missing"; }
   };
@@ -58,6 +58,13 @@ async function fakeRisubard(saveDir, opts = {}) {
       }
       if (req.headers["risu-auth"] !== "TOKEN") return json(res, 400, { error: "No auth header" });
       if (url.pathname === "/api/session" && req.method === "POST") return json(res, 200, { ok: true });
+      if (url.pathname === "/api/assets/bulk-write" && req.method === "POST") {
+        if (opts.bulkStatus) return json(res, opts.bulkStatus, { error: "nope" });
+        if (!Array.isArray(body)) return json(res, 400, { error: "Body must be a JSON array of {key, value}" });
+        for (const e of body) assets.set(e.key, Buffer.from(e.value, "base64"));
+        return json(res, 200, { success: true, count: body.length });
+      }
+      if (url.pathname === "/api/list" && req.method === "GET") return json(res, 200, { success: true, content: [...assets.keys()].filter((k) => k.startsWith(req.headers["key-prefix"] || "")) });
       if (url.pathname === "/api/external-changes" && req.method === "GET") {
         // extraPending: 우리가 쓴 뒤에만 다른 파일 변경이 함께 보이는 경우(그 사이 누가 고친 상황)
         const list = [...changed(), ...(changed().length ? opts.extraPending ?? [] : [])];
@@ -74,7 +81,7 @@ async function fakeRisubard(saveDir, opts = {}) {
     });
   });
   await new Promise((r) => server.listen(0, "127.0.0.1", r));
-  return { url: `http://127.0.0.1:${server.address().port}`, calls, pending: changed, close: () => new Promise((r) => server.close(r)), editExternally: (rel, text) => { fs.writeFileSync(path.join(saveDir, rel), text); } };
+  return { url: `http://127.0.0.1:${server.address().port}`, calls, assets, pending: changed, close: () => new Promise((r) => server.close(r)), editExternally: (rel, text) => { fs.writeFileSync(path.join(saveDir, rel), text); } };
 }
 
 module.exports = { sha, tmp, plugin, setup, fakeRisubard };

@@ -18,6 +18,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
+const { createRisuClient } = require("./risu-client.cjs");
 
 const MAX_EDITS = 20;           // 한 번에 고칠 수 있는 플러그인 수
 const MAX_SCRIPT = 12 * 1024 * 1024;
@@ -162,32 +163,14 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
   }
 
   // ── 리스(RisuBard) 호출 ──
-  async function risu(method, p, { body, headers, timeout = 20000 } = {}) {
-    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), timeout);
-    try {
-      const res = await fetchImpl(risuUrl + p, { method, headers: { "content-type": "application/json", ...headers }, body: body === undefined ? undefined : JSON.stringify(body), signal: ctrl.signal });
-      let json = null; try { json = await res.json(); } catch { /* JSON 아님 */ }
-      return { status: res.status, json };
-    } catch (e) { throw fail(424, `리스 서버에 연결하지 못했어요(${risuUrl}): ${e.name === "AbortError" ? "응답이 없어요" : e.message}`); } finally { clearTimeout(t); }
-  }
+  const client = createRisuClient({ saveDir, risuUrl, fetchImpl });
+  const risu = client.risu;
   async function connect() {
-    let pw = ""; try { pw = fs.readFileSync(path.join(saveDir, "__password"), "utf8").trim(); } catch { /* 아래에서 */ }
-    if (!pw) throw fail(424, "리스 암호 파일(__password)을 읽지 못했어요. 리스에 암호가 설정돼 있어야 고칠 수 있어요");
-    const login = await risu("POST", "/api/login", { body: { password: pw } });
-    if (login.status !== 200 || !login.json?.token) throw fail(424, `리스 로그인에 실패했어요(응답 ${login.status})`);
-    const token = login.json.token;
-    const session = async () => {
-      const id = `cellar-${crypto.randomBytes(6).toString("hex")}`;
-      const h = { "risu-auth": token, "x-session-id": id };
-      const r = await risu("POST", "/api/session", { headers: h });
-      if (r.status !== 200) throw fail(424, `리스 세션을 만들지 못했어요(응답 ${r.status})`);
-      return h;
-    };
-    let headers = await session();
+    const c = await client.connect();
     return {
-      pending: async () => { const r = await risu("GET", "/api/external-changes", { headers }); if (r.status !== 200) throw fail(424, `리스의 외부 변경 상태를 읽지 못했어요(응답 ${r.status})`); return r.json?.pending ?? null; },
-      resolve: (revision) => risu("POST", "/api/external-changes/resolve", { headers, body: { decision: "accept", revision }, timeout: 120000 }),
-      renew: async () => { headers = await session(); },
+      pending: async () => { const r = await risu("GET", "/api/external-changes", { headers: c.headers() }); if (r.status !== 200) throw fail(424, `리스의 외부 변경 상태를 읽지 못했어요(응답 ${r.status})`); return r.json?.pending ?? null; },
+      resolve: (revision) => risu("POST", "/api/external-changes/resolve", { headers: c.headers(), body: { decision: "accept", revision }, timeout: 120000 }),
+      renew: c.renew,
     };
   }
 

@@ -52,3 +52,10 @@
 - [ ] **원본 RisuAI**(kwaroran/RisuAI): `save/`에 hex 이름 파일, `database/database.bin` = RisuSave(`RISUSAVE\0` + 블록, plugins 블록 type 9). 서버는 파일 저장만 → 리스 안 멈춰도 됨. **충돌 방지 없음** → 열린 화면이 다음 저장 때 덮어씀. 고친 직후 모두 새로고침 경고 필수. 마지막 순서.
 - 순서: RisuBard(끝) → PocketRisu → 원본.
 - Atelier 쪽(feat/1.8.3): `src/data/cellarplugins.js`, `src/ui/screens/pluginedit.js`, 플러그인 탭 행 메뉴 '코드 수정'. 고치기 전 세이브 백업은 Atelier 화면이 기존 `/cellar/backup`으로 먼저 돌리고(기본 켜짐), 설정 파일 스냅샷은 서버가 apply마다 항상 만든다.
+
+
+## 에셋 빠른 쓰기 (2026-11-03)
+- `assets.cjs`(+ 공통 `risu-client.cjs`, plugins.cjs도 이걸 씀) · `POST /cellar/assets` status/missing/put. features에 "assets".
+- 호스트별: risuai=save/<hex(key)> 직접(임시→rename, fsync 없음) / risubard·pocketrisu=로컬 /api/assets/bulk-write(50개·24MB씩).
+- 시험: tests/assets.test.js (Cellar 65 통과). 진짜 서버로는 아직 확인 못 함.
+- 남은 일: 카드(.charx/png/risum) 서버측 풀기, 플러그인 쪽에서 미리 넣은 에셋으로 캐릭터 등록, Atelier UI, RisuBard 인덱스 직접 쓰기(재시작 필요) 모드, 사용자 실측(`node tools/fsync-bench.cjs ~/bench-tmp 1000 200`).

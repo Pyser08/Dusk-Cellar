@@ -82,10 +82,12 @@ if (flag("--role-server")) {
   // 플러그인 수정(plugins.cjs): 지금은 RisuBard만. 리스 서버 주소는 같은 기기의 --risu-port(기본: 리스와 같은 PORT 환경변수, 없으면 7777)
   const { createPlugins, detectHost } = require("./plugins.cjs");
   const plugins = saveDir ? createPlugins({ dataDir, saveDir, risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
-  const features = () => ["mem", ...(backups ? ["backup"] : []), ...(plugins && detectHost(saveDir) === "risubard" ? ["plugins"] : [])];
+  const { createAssets } = require("./assets.cjs");
+  const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
+  const features = () => ["mem", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) === "risubard" ? ["plugins"] : [])];
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
-  const readJson = (req) => new Promise((resolve, reject) => {
-    const limit = MAX_VALUE + 64 * 1024;
+  const readJson = (req, max = MAX_VALUE) => new Promise((resolve, reject) => {
+    const limit = max + 64 * 1024;
     let size = 0; const chunks = [];
     req.on("data", (c) => { size += c.length; if (size > limit) { reject(Object.assign(new Error("요청이 너무 커요"), { status: 413 })); req.destroy(); } else chunks.push(c); });
     req.on("end", () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch { reject(Object.assign(new Error("JSON이 아니에요"), { status: 400 })); } });
@@ -144,6 +146,15 @@ if (flag("--role-server")) {
         if (b.action === "mutate") return send(res, 200, await plugins.mutate(b));
         if (b.action === "export") return send(res, 200, await plugins.exportAll(b));
         return send(res, 400, { ok: false, error: "action은 list·get·apply·mutate·export예요" });
+      }
+      // 에셋 빠른 쓰기(assets.cjs). action: status · missing · put (본문 한도 64MB)
+      if (url.pathname === "/cellar/assets" && req.method === "POST") {
+        if (!assets) return send(res, 404, { ok: false, error: "세이브 폴더를 몰라서 에셋을 쓸 수 없어요(--save-dir)" });
+        const b = await readJson(req, 64 * 1024 * 1024);
+        if (b.action === "status") return send(res, 200, { ok: true, ...assets.status() });
+        if (b.action === "missing") return send(res, 200, { ok: true, ...(await assets.missing(b)) });
+        if (b.action === "put") return send(res, 200, { ok: true, ...(await assets.put(b)) });
+        return send(res, 400, { ok: false, error: "action은 status·missing·put이에요" });
       }
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {

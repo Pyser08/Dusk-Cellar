@@ -129,3 +129,12 @@ node --test tests/*.js tests/*.mjs
 ```
 
 Node 기본 모듈만 써요(`npm install` 불필요).
+
+## 에셋 빠른 쓰기 `/cellar/assets` (POST)
+
+봇·모듈 가져오기에서 에셋(이미지·소리)을 리스 저장소에 한꺼번에 넣는 길이에요. 키는 `assets/<sha256>.<확장자>`만 받고, 내용의 해시가 키와 다르면 거부해요.
+
+- `{action:"status"}` → `{ok, host, sink}` (`direct`=순정 리스AI 파일 직접 쓰기, `bulk`=RisuBard·PocketRisu의 `/api/assets/bulk-write`)
+- `{action:"missing", keys:[…]}` → 서버에 없는 키만 돌려줘요(최대 5000개)
+- `{action:"put", entries:[{key, value(base64)}]}` → 한 번에 200개까지, 요청 본문 64MB까지
+- 서버가 실행 중이어도 쓸 수 있어요. 호스트가 알 수 없는 폴더면 501이에요.
