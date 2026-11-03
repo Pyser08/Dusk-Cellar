@@ -16,7 +16,7 @@
 - `cellar-start.cjs` — 실행기 + 서버(같은 파일 `--role-server`). 리스 종료 → Cellar 종료·같은 코드, Cellar만 죽으면 최대 5번 재시작(1·2·4·8·16초), 포트 사용 중(78)이면 리스만.
 - `store.cjs` — 기억 저장소(키-값 파일 저장, rev·baseRev 충돌 검사, opId 재전송 무시, 일별 스냅샷 7일). `cellar-start.cjs`의 `/cellar/mem*` 주소가 사용.
 - `backup.cjs` — 세이브 백업·복원(바뀐 파일만 복사, 나머지는 직전 백업과 하드링크, 리스 파일과는 링크 안 함). 복원은 실행기 `doRestore`가 IPC 메시지(type restore)로 받아 리스·Cellar를 멈추고 '복원 전 자동' 백업 후 동기화하고 다시 켠다.
-- `tests/` — `node --test tests/*.js tests/*.mjs` (32개).
+- `tests/` — `node --test tests/*.js tests/*.mjs` (34개).
 
 ## 진행
 - [x] 실행 구조, 설치기, README (2026-11-03, b48c204)
@@ -27,6 +27,7 @@
 - [ ] 1단계 플러그인 쪽(Atelier): 서버 감지 → 저장소 어댑터(`memorystore3.js`의 get/set/rm 18~20줄, `dusk.mem.v3.f.*`만), 끊김 대기열(변경분만·opId·상한), 처음 연결 시 로컬 기억 올리기(로컬 원본은 남김), 연속 2~3회 실패해야 끊김으로 판단, 충돌은 기록 합치기+최신 시각 우선. 설정·인덱스 분리 필요 여부 확인(인덱스에 settings가 섞여 있음). 작업 브랜치 미정.
 - [x] 플러그인 쪽 기억 저장(Atelier feat/1.8.3, `src/data/memoryremote.js`) (2026-11-03)
 - [x] 2단계 백업·복원(`/cellar/backup`, 2026-11-03). 조사: 원본 RisuAI는 `save/`에 hex 이름 파일, RisuBard(PocketRisu 기반)는 `save/kv/manifest.json`+`save/kv/objects/` → 공통은 `<리스>/save`. 압축 대신 증분 스냅샷(하드링크). 시험 파일 2만 개·1GB: 백업 4.8초→3.0초(증분), 복원 1.0초 vs tar.gz 34.6초/풀기 7.2초.
+- [x] 저장 형식 조사 보강(2026-11-03): PocketRisu는 `save/risuai.db`(SQLite WAL) → 온라인 백업(`node:sqlite` backup)으로, -wal/-shm 제외(복원 때 삭제). RisuBard `save/.risubard-server.lock`은 백업·복원에서 제외. 시험 34개.
 - [ ] 실제 RisuBard(31만 파일·26GB)에서 첫 백업 시간·디스크 여유·링크 시간 측정. 링크가 느리면 내용 주소 저장(manifest + objects, 링크 없음)으로 바꾸는 것 검토
 - [ ] 복원 직후 열려 있던 리스 화면이 옛 DB를 다시 저장하는지 실기기 확인(현재 안내: 모두 새로고침)
 - [ ] 윈도우(NTFS 하드링크)·Termux(링크 불가 → 복사로 대체) 확인

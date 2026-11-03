@@ -14,6 +14,30 @@ const path = require("node:path");
 
 const ID_RE = /^\d{8}-\d{6}(-\d+)?$/;
 const PARALLEL = 16;
+// 건드리지 않는 것: RisuBard의 실행 잠금 폴더(복원하면 옛 pid 잠금 때문에 안 켜질 수 있음)
+const SKIP_DIRS = new Set([".risubard-server.lock"]);
+// SQLite(PocketRisu의 save/risuai.db 등): 도는 중에 파일을 그냥 복사하면 WAL과 어긋나 깨질 수 있다 →
+// SQLite 온라인 백업으로 한 파일에 일관되게 담고, -wal·-shm·-journal은 담지 않는다(복원 때는 지워진다).
+const SQLITE_SIDE = /-(wal|shm|journal)$/;
+const SQLITE_HEAD = Buffer.from("SQLite format 3\0");
+function isSqlite(file) {
+  try { const fd = fs.openSync(file, "r"); const b = Buffer.alloc(16); const n = fs.readSync(fd, b, 0, 16, 0); fs.closeSync(fd); return n === 16 && b.equals(SQLITE_HEAD); } catch { return false; }
+}
+let sqliteMod;
+function sqlite() {
+  if (sqliteMod === undefined) {
+    try { const w = process.emitWarning; process.emitWarning = () => {}; try { sqliteMod = require("node:sqlite"); } finally { process.emitWarning = w; } } catch { sqliteMod = null; }
+  }
+  return sqliteMod?.backup ? sqliteMod : null;
+}
+async function sqliteBackup(src, dst) {
+  const m = sqlite();
+  if (!m) throw Object.assign(new Error("이 Node에는 SQLite 백업 기능이 없어요(Node 22.16 이상 필요)"), { status: 500 });
+  await fsp.mkdir(path.dirname(dst), { recursive: true });
+  await fsp.rm(dst, { force: true });
+  const db = new m.DatabaseSync(src, { readOnly: true });
+  try { await m.backup(db, dst); } finally { db.close(); }
+}
 
 // 폴더 안의 파일 목록: { "상대/경로": [size, mtimeMs] } — 심볼릭 링크·특수 파일은 건너뛴다
 async function scan(root) {
@@ -24,6 +48,7 @@ async function scan(root) {
     try { ents = await fsp.readdir(dir, { withFileTypes: true }); } catch (e) { if (e.code === "ENOENT") return; throw e; }
     for (const e of ents) {
       const r = rel ? rel + "/" + e.name : e.name;
+      if (e.isDirectory() && SKIP_DIRS.has(e.name)) continue;
       if (e.isDirectory()) await walk(path.join(dir, e.name), r);
       else if (e.isFile()) {
         try { const st = await fsp.stat(path.join(dir, e.name)); out[r] = [st.size, Math.round(st.mtimeMs)]; } catch (err) { if (err.code !== "ENOENT") throw err; }
@@ -79,16 +104,30 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
     const manifest = { v: 1, id, at: now().getTime(), label, sources: {}, count: 0, bytes: 0, copied: 0, linked: 0 };
     try {
       for (const [name, src] of sources()) {
-        let files = await scan(src);
+        const sqliteFiles = new Set();
+        const filterOut = (all) => {
+          for (const r of Object.keys(all)) if (!SQLITE_SIDE.test(r) && !sqliteFiles.has(r) && r.endsWith(".db") && isSqlite(path.join(src, r))) sqliteFiles.add(r);
+          for (const r of Object.keys(all)) if (SQLITE_SIDE.test(r) && sqliteFiles.has(r.replace(SQLITE_SIDE, ""))) delete all[r];
+          return all;
+        };
+        let files = filterOut(await scan(src));
         const before = prev?.sources?.[name] ?? {};
+        // SQLite는 온라인 백업으로 먼저(내용이 계속 바뀌므로 링크하지 않고 매번 새로)
+        for (const r of sqliteFiles) {
+          const dst = path.join(tmp, name, r);
+          await sqliteBackup(path.join(src, r), dst);
+          const st = await fsp.stat(dst);
+          files[r] = [st.size, Math.round(st.mtimeMs)];
+          manifest.copied++;
+        }
+        const got = Object.fromEntries([...sqliteFiles].map((r) => [r, files[r]]));
         // 디스크 확인: 새로 복사할 양 + 여유 64MB
         const need = Object.entries(files).reduce((n, [r, m]) => n + (same(m, before[r]) ? 0 : m[0]), 0);
         const free = await freeBytes(root);
         if (need + 64 * 1024 * 1024 > free) throw Object.assign(new Error(`디스크 공간이 부족해요(필요 ${Math.ceil(need / 1048576)}MB, 남음 ${Math.floor(free / 1048576)}MB)`), { status: 507 });
-        const got = {};
-        if (job) { job.phase = name; job.total += Object.keys(files).length; }
+        if (job) { job.phase = name; job.total += Object.keys(files).length; job.done += sqliteFiles.size; }
         for (let pass = 0; pass < 3; pass++) {
-          const todo = Object.entries(files).filter(([r, m]) => !same(got[r], m));
+          const todo = Object.entries(files).filter(([r, m]) => !sqliteFiles.has(r) && !same(got[r], m));
           if (!todo.length) break;
           await pool(todo, PARALLEL, async ([r, m]) => {
             const dst = path.join(tmp, name, r);
@@ -107,7 +146,8 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
             got[r] = m;
             if (job) { job.done++; job.bytes += m[0]; }
           });
-          files = await scan(src);   // 복사하는 동안 바뀐 것 확인
+          files = filterOut(await scan(src));   // 복사하는 동안 바뀐 것 확인
+          for (const r of sqliteFiles) files[r] = got[r];
           for (const r of Object.keys(got)) if (!files[r]) { delete got[r]; await fsp.rm(path.join(tmp, name, r), { force: true }); }
         }
         manifest.sources[name] = got;

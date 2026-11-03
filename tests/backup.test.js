@@ -95,3 +95,36 @@ test("scan: 파일만, 크기와 수정 시각", async () => {
   assert.equal(s["database.bin"][0], 4);
   assert.deepEqual(await scan(path.join(w.root, "없음")), {});
 });
+
+test("SQLite(WAL)는 온라인 백업으로 일관되게 담고, -wal·-shm은 빼고, 복원하면 지운다", async () => {
+  const w = world();
+  const { DatabaseSync } = require("node:sqlite");
+  const dbFile = path.join(w.save, "risuai.db");
+  const db = new DatabaseSync(dbFile);
+  db.exec("PRAGMA journal_mode=WAL; CREATE TABLE kv(k TEXT PRIMARY KEY, v TEXT);");
+  db.prepare("INSERT INTO kv VALUES (?, ?)").run("a", "1");     // WAL에만 있고 본 파일에는 아직 없음
+  assert.ok(fs.existsSync(dbFile + "-wal"));
+  const a = await w.b.create();
+  const snap = path.join(w.data, "backups", a.id, "save");
+  assert.equal(fs.existsSync(path.join(snap, "risuai.db-wal")), false);
+  const copy = new DatabaseSync(path.join(snap, "risuai.db"), { readOnly: true });
+  assert.equal(copy.prepare("SELECT v FROM kv WHERE k='a'").get().v, "1", "WAL에만 있던 내용도 담김");
+  copy.close();
+  db.prepare("INSERT INTO kv VALUES (?, ?)").run("b", "2");
+  db.close();
+  await w.b.restore(a.id);
+  assert.equal(fs.existsSync(dbFile + "-wal"), false);
+  const back = new DatabaseSync(dbFile, { readOnly: true });
+  assert.deepEqual(back.prepare("SELECT k FROM kv ORDER BY k").all().map((r) => r.k), ["a"]);
+  back.close();
+});
+
+test("RisuBard 잠금 폴더는 백업하지도 복원으로 건드리지도 않는다", async () => {
+  const w = world();
+  put(path.join(w.save, ".risubard-server.lock", "owner.json"), '{"pid":1}');
+  const a = await w.b.create();
+  assert.equal(fs.existsSync(path.join(w.data, "backups", a.id, "save", ".risubard-server.lock")), false);
+  put(path.join(w.save, ".risubard-server.lock", "owner.json"), '{"pid":2}');
+  await w.b.restore(a.id);
+  assert.equal(read(path.join(w.save, ".risubard-server.lock", "owner.json")), '{"pid":2}');
+});
