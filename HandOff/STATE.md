@@ -33,3 +33,13 @@
 - [ ] 윈도우(NTFS 하드링크)·Termux(링크 불가 → 복사로 대체) 확인
 - [ ] 속도 측정(서버 저장 vs 플러그인 저장)
 - [ ] (효과 있으면) 분석·임베딩 서버 실행
+
+## 다음 작업: 플러그인 수정(무중단) — 사용자 결정 2026-11-03, 미착수
+리스는 플러그인이 다른 플러그인을 고치지 못하게 막았다(RisuAI PR #1572, 플러그인 API에서 plugins 필드 읽기 전용). Cellar가 대신 고친다.
+- **허락:** Atelier에서 사용자가 직접 수정할 때만. 요청마다 **리스 암호 입력**(다른 플러그인은 암호를 모름 — 프록시 인증은 리스가 붙임, pluginStorage는 모든 플러그인 공유라 비밀 보관 불가). 확인 후 10분은 Atelier 메모리에만 허락 유지. 고치기 전 Cellar 증분 백업 자동.
+- **새로고침:** 플러그인 iframe은 sandbox(allow-top-navigation 없음)라 리스 전체 새로고침 불가 → 고친 뒤 안내. `Risuai.loadPlugins()`는 메모리 DB 기준이라 효과 미확인.
+- 호스트별(소스 조사 결과, 실기기 미확인):
+  1. **RisuBard**(조사: rpaddict/RisuBard): 데이터가 `save/kv` + 정식 파일(`save/settings/app.json`, 비밀 이름 키가 섞이면 `save/secrets/credentials.json`)로도 풀려 있고, 바깥 수정 감지·사용자 검토(EXTERNAL_CHANGES_PENDING) 및 `/api/external-edit/start`·`finish`(외부 파일 감시 켜져 있어야 함, auth+active session 필요)가 있다. 플러그인 목록은 app.json의 `plugins`. → app.json 수정 후 리스의 검토/채택 흐름을 쓰면 무중단·덮어쓰기 없음. sha256 검증 파일 여부(`readCanonicalJson`) 확인 필요.
+  2. **PocketRisu**(PocketRisu/PocketRisu): `save/risuai.db`(SQLite WAL, 'database/database.bin'은 chunkStore). 서버가 DB를 메모리(dbCache)에 둠 → 파일 직접 수정 금지, **리스 API로**: `/api/login`(암호)→JWT, `/api/session`(새 x-session-id, 사용자 제스처 헤더 없이 → 잠금 안 뺏고 '새 세션'이라 쓰기 통과), `/api/read`로 DB 받아 RisuSave 디코드 → plugins 블록(type 9, name 'plugins', JSON) 교체 → `/api/write` + `x-if-match` etag. 열린 화면은 409 → `rebaseTrackedLocalChangesOnLatestServerDb`로 서버 값 위에 자기 변경만 다시 얹음 → 덮어쓰기 없음. RisuSave 인코더/디코더를 Cellar에 구현해야 함(가장 큰 작업; 서버 쪽 `utils.cjs` decodeRisuSave·encodeRisuSaveLegacy 참고, 청크/스텁 처리 주의).
+  3. **원본 RisuAI**(kwaroran/RisuAI): `save/`에 hex 이름 파일, `database/database.bin` = RisuSave(`RISUSAVE\0` + 블록, plugins 블록 type 9). 서버는 파일 저장만 → 리스 안 멈춰도 됨. **충돌 방지 없음** → 열린 화면이 다음 저장 때 덮어씀. 고친 직후 모두 새로고침 경고 필수. 마지막 순서.
+- 순서 제안: RisuBard → PocketRisu → 원본. Cellar `POST /cellar/plugins`(action list/apply, password) + Atelier 플러그인 탭에 수정 화면(미리 보기·암호·결과).
