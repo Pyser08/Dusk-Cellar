@@ -141,7 +141,9 @@ if (flag("--role-server")) {
         if (b.action === "list") return send(res, 200, await plugins.list());
         if (b.action === "get") return send(res, 200, await plugins.get(b));
         if (b.action === "apply") return send(res, 200, await plugins.apply(b));
-        return send(res, 400, { ok: false, error: "action은 list·get·apply예요" });
+        if (b.action === "mutate") return send(res, 200, await plugins.mutate(b));
+        if (b.action === "export") return send(res, 200, await plugins.exportAll(b));
+        return send(res, 400, { ok: false, error: "action은 list·get·apply·mutate·export예요" });
       }
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {

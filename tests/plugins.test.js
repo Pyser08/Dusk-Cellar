@@ -199,3 +199,58 @@ test("gzip: get은 scriptZ로 주고, apply는 scriptZ로 받은 코드를 풀�
     await assert.rejects(p.apply({ edits: [{ name: "a", expectSha: "0".repeat(64), scriptZ: "not-gzip" }] }), (e) => e.status === 400);
   } finally { await fr.close(); }
 });
+
+async function withHost(plugins, fn) {
+  const { setup, fakeRisubard } = require("./helpers/fakerisubard.cjs");
+  const s = setup({ plugins });
+  const fr = await fakeRisubard(s.saveDir);
+  try { await fn(createPlugins({ saveDir: s.saveDir, dataDir: s.dataDir, risuUrl: fr.url, log() {} }), s); } finally { await fr.close(); }
+}
+
+test("mutate set: 켜짐·별칭만 바뀌고 나머지·다른 설정은 그대로, 허용 안 된 항목은 거절", async () => {
+  await withHost([plugin("a"), plugin("b")], async (p, s) => {
+    const r = await p.mutate({ ops: [{ op: "set", name: "a", fields: { enabled: false, alias: "에이" } }, { op: "set", name: "b", fields: { realArg: { k: "v" } } }] });
+    assert.equal(r.ok, true); assert.equal(r.adopted, true);
+    const d = s.read("settings/app.json");
+    assert.equal(d.plugins[0].enabled, false); assert.equal(d.plugins[0].alias, "에이"); assert.equal(d.plugins[0].script, plugin("a").script);
+    assert.deepEqual(d.plugins[1].realArg, { k: "v" }); assert.equal(d.theme, "dark");
+    await p.mutate({ ops: [{ op: "set", name: "a", fields: { alias: null } }] });
+    assert.equal("alias" in s.read("settings/app.json").plugins[0], false);
+    await assert.rejects(p.mutate({ ops: [{ op: "set", name: "a", fields: { script: "x" } }] }), (e) => e.status === 400);
+    await assert.rejects(p.mutate({ ops: [{ op: "set", name: "a", fields: { enabled: "yes" } }] }), (e) => e.status === 400);
+  });
+});
+
+test("mutate add·remove·order·replace(설정 유지)", async () => {
+  await withHost([plugin("a", { alias: "에이", realArg: { x: "1", y: "2" }, arguments: { x: "string", y: "int" } }), plugin("b")], async (p, s) => {
+    const names = () => s.read("settings/app.json").plugins.map((x) => x.name);
+    await p.mutate({ ops: [{ op: "add", plugin: { name: "c", script: "//@name c\n//@api 3.0\n" } }] });
+    assert.deepEqual(names(), ["a", "b", "c"]);
+    await assert.rejects(p.mutate({ ops: [{ op: "add", plugin: { name: "c", script: "//@name c\n" } }] }), (e) => e.status === 409 && e.extra.exists);
+    await assert.rejects(p.mutate({ ops: [{ op: "add", plugin: { name: "d", script: "//@name zzz\n" } }] }), (e) => e.status === 400);
+    // 교체: 같은 이름·타입의 인자값 유지(y는 타입이 바뀌어 버림)
+    await p.mutate({ ops: [{ op: "add", replace: true, plugin: { name: "a", script: "//@name a\nnew", arguments: { x: "string", y: "string" } } }] });
+    const a = s.read("settings/app.json").plugins[0];
+    assert.equal(a.script, "//@name a\nnew"); assert.equal(a.alias, "에이"); assert.deepEqual(a.realArg, { x: "1" });
+    const l = await p.list();
+    await p.mutate({ expectListSha: l.listSha, ops: [{ op: "order", order: [2, 0, 1] }] });
+    assert.deepEqual(names(), ["c", "a", "b"]);
+    await assert.rejects(p.mutate({ ops: [{ op: "order", order: [0, 1, 2] }] }), (e) => e.status === 400, "목록 해시 없이는 순서를 못 바꿈");
+    await assert.rejects(p.mutate({ expectListSha: l.listSha, ops: [{ op: "order", order: [0, 1, 2] }] }), (e) => e.status === 409 && e.extra.conflict, "그새 바뀌면 거절");
+    await p.mutate({ ops: [{ op: "remove", name: "b" }] });
+    assert.deepEqual(names(), ["c", "a"]);
+  });
+});
+
+test("export·replaceAll: 전체를 받아서 그대로 되돌릴 수 있다(백업·복원)", async () => {
+  await withHost([plugin("a", { realArg: { k: "v" } }), plugin("b")], async (p, s) => {
+    const ex = await p.exportAll({});
+    assert.equal(ex.plugins.length, 2); assert.equal(ex.plugins[0].realArg.k, "v");
+    const exz = await p.exportAll({ gzip: true });
+    assert.equal(JSON.parse(require("node:zlib").gunzipSync(Buffer.from(exz.pluginsZ, "base64")).toString()).length, 2);
+    await p.mutate({ ops: [{ op: "remove", name: "a" }, { op: "remove", name: "b" }, { op: "add", plugin: { name: "z", script: "//@name z\n" } }] });
+    await p.mutate({ expectListSha: (await p.list()).listSha, ops: [{ op: "replaceAll", plugins: ex.plugins }] });
+    assert.deepEqual(s.read("settings/app.json").plugins.map((x) => x.name), ["a", "b"]);
+    assert.equal(s.read("settings/app.json").plugins[0].realArg.k, "v");
+  });
+});

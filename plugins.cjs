@@ -76,7 +76,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
   }
   const summary = (p, index) => ({
     index, name: String(p?.name ?? ""), displayName: p?.displayName ? String(p.displayName) : undefined, version: p?.version ?? null,
-    versionOfPlugin: p?.versionOfPlugin ?? null, enabled: p?.enabled !== false,
+    versionOfPlugin: p?.versionOfPlugin ?? null, enabled: p?.enabled !== false, alias: typeof p?.alias === "string" ? p.alias : undefined, updateURL: p?.updateURL ? String(p.updateURL) : undefined,
     bytes: Buffer.byteLength(String(p?.script ?? "")), sha256: sha256(String(p?.script ?? "")),
     argNames: Object.keys(p?.arguments ?? {}),   // 인자 이름만. 값(realArg)은 비밀일 수 있어 주지 않는다
   });
@@ -84,7 +84,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
   async function list() {
     const host = need();
     const f = load();
-    return { ok: true, host, location: f?.where ?? "settings", plugins: (f?.obj.plugins ?? []).map(summary) };
+    return { ok: true, host, location: f?.where ?? "settings", listSha: f ? sha256(JSON.stringify(f.obj.plugins)) : "", plugins: (f?.obj.plugins ?? []).map(summary) };
   }
   function pick(plugins, { name, index }) {
     const hits = plugins.map((p, i) => [p, i]).filter(([p, i]) => p?.name === name && (index === undefined || i === index));
@@ -191,14 +191,14 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     };
   }
 
-  function apply({ edits } = {}) {
+  // 파일을 고치는 공통 흐름: planFn()은 지금 파일 기준으로 { f, results, text }를 만든다(두 번 불린다: 리스를 부르기 전·쓰기 직전)
+  function commit(planFn, label) {
     return serial(async () => {
       need();
-      const list = validate(edits);
-      plan(list);                                   // 리스를 부르기 전에 빠르게 확인(해시·머리말)
+      planFn();                                     // 리스를 부르기 전에 빠르게 확인
       const conn = await connect();
       if (await conn.pending()) throw fail(409, "리스에 검토 대기 중인 외부 변경이 있어요. 리스 화면에서 먼저 처리한 뒤 다시 해 주세요", { pending: true });
-      const { f, results, text } = plan(list);      // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인
+      const { f, results, text } = planFn();      // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인
       const snap = snapshot(f, results);
       try {
         atomicWrite(f.file, text);
@@ -208,7 +208,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
         try { fs.copyFileSync(path.join(snapRoot, snap, f.rel), f.file); if (fs.existsSync(path.join(snapRoot, snap, f.rel + ".sha256"))) fs.copyFileSync(path.join(snapRoot, snap, f.rel + ".sha256"), f.file + ".sha256"); } catch { /* 스냅샷은 남아 있다 */ }
         throw fail(500, `파일을 쓰지 못했어요: ${e.message}`, { written: false, snapshot: snap });
       }
-      log(`플러그인 수정: ${results.map((r) => r.name).join(", ")} → ${f.rel} (스냅샷 ${snap})`);
+      log(`플러그인 ${label}: ${results.map((r) => r.name).join(", ")} → ${f.rel} (스냅샷 ${snap})`);
       const after = { written: true, snapshot: snap, file: f.rel };
       let adopted = false, reload = false;
       for (let attempt = 0; attempt < 2 && !adopted; attempt++) {
@@ -229,7 +229,103 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     });
   }
 
-  return { list, get, apply, detect: () => detectHost(saveDir) };
+
+  async function apply({ edits } = {}) {
+    const list = validate(edits);
+    return commit(() => plan(list), "수정");
+  }
+
+  // ── 일반 수정(켜짐·이름·별칭·인자값·순서·추가·삭제·통째 바꾸기) ──
+  const SET_KEYS = { enabled: "boolean", displayName: "string", alias: "string", realArg: "object", arguments: "object", customLink: "array", argMeta: "object", versionOfPlugin: "string", updateURL: "string", __pmPresets__: "object" };
+  const typeOk = (v, t) => (t === "array" ? Array.isArray(v) : t === "object" ? v && typeof v === "object" && !Array.isArray(v) : typeof v === t);
+  const listSha = (plugins) => sha256(JSON.stringify(plugins));
+  function checkNew(pl) {
+    if (!pl || typeof pl !== "object" || typeof pl.name !== "string" || !pl.name) throw fail(400, "추가할 플러그인에 이름이 없어요");
+    if (typeof pl.script !== "string" || !pl.script.trim()) throw fail(400, `'${pl.name}'의 코드가 비어 있어요`);
+    if (Buffer.byteLength(pl.script) > MAX_SCRIPT) throw fail(413, `'${pl.name}'의 코드가 너무 커요`);
+    const header = /^[ \t]*\/\/@name[ \t]+(.+?)[ \t]*\r?$/m.exec(pl.script)?.[1];
+    if (header !== pl.name) throw fail(400, `'${pl.name}'의 머리말 //@name이 ${header ? `'${header}'` : "없어요"}`);
+    return { enabled: true, version: "3.0", versionOfPlugin: "", updateURL: "", arguments: {}, realArg: {}, customLink: [], argMeta: {}, displayName: pl.name, ...pl };
+  }
+  function planOps(ops, expectListSha) {
+    const f = load();
+    if (!f) throw fail(404, "설치된 플러그인 목록을 찾지 못했어요");
+    let plugins = f.obj.plugins.map((p) => ({ ...p }));
+    if (expectListSha && listSha(f.obj.plugins) !== expectListSha) throw fail(409, "그새 플러그인 목록이 바뀌었어요. 새로고침한 뒤 다시 해 주세요", { conflict: true, listChanged: true });
+    const results = [];
+    for (const o of ops) {
+      if (!o || typeof o.op !== "string") throw fail(400, "알 수 없는 작업이에요");
+      if (o.op === "set") {
+        const [p, i] = pick(plugins, o);
+        const fields = o.fields && typeof o.fields === "object" ? o.fields : {};
+        const next = { ...p };
+        for (const [k, v] of Object.entries(fields)) {
+          if (!(k in SET_KEYS)) throw fail(400, `'${k}'은(는) 고칠 수 없는 항목이에요`);
+          if (v === null && k === "alias") { delete next[k]; continue; }
+          if (!typeOk(v, SET_KEYS[k])) throw fail(400, `'${k}'의 형식이 맞지 않아요(${SET_KEYS[k]})`);
+          next[k] = v;
+        }
+        plugins[i] = next;
+        results.push({ op: "set", name: p.name, index: i, fields: Object.keys(fields) });
+      } else if (o.op === "remove") {
+        const [p, i] = pick(plugins, o);
+        plugins.splice(i, 1);
+        results.push({ op: "remove", name: p.name, index: i });
+      } else if (o.op === "add") {
+        const pl = checkNew(o.plugin);
+        const same = plugins.map((p, i) => [p, i]).filter(([p]) => p?.name === pl.name);
+        if (same.length && !o.replace) throw fail(409, `'${pl.name}' 플러그인이 이미 있어요`, { exists: true, name: pl.name });
+        if (same.length) {
+          const [old, i] = same[0];
+          const keep = o.keepSettings !== false;   // 기본: 켜짐·별칭·순서·같은 이름·타입의 인자값을 유지
+          const merged = { ...pl };
+          if (keep) {
+            merged.enabled = old.enabled !== false;
+            if (old.alias !== undefined) merged.alias = old.alias;
+            const realArg = {};
+            for (const [k, t] of Object.entries(pl.arguments ?? {})) if (old.arguments?.[k] === t && old.realArg && k in old.realArg) realArg[k] = old.realArg[k];
+            merged.realArg = { ...(pl.realArg ?? {}), ...realArg };
+            if (old.__pmPresets__ !== undefined) merged.__pmPresets__ = old.__pmPresets__;
+          }
+          plugins[i] = merged;
+          results.push({ op: "replace", name: pl.name, index: i });
+        } else {
+          const at = Number.isInteger(o.position) ? Math.max(0, Math.min(plugins.length, o.position)) : plugins.length;
+          plugins.splice(at, 0, pl);
+          results.push({ op: "add", name: pl.name, index: at });
+        }
+      } else if (o.op === "order") {
+        if (!Array.isArray(o.order) || o.order.length !== plugins.length || new Set(o.order).size !== plugins.length || o.order.some((i) => !Number.isInteger(i) || i < 0 || i >= plugins.length)) throw fail(400, "순서가 맞지 않아요(현재 번호를 모두 한 번씩 보내야 해요)");
+        plugins = o.order.map((i) => plugins[i]);
+        results.push({ op: "order", name: "순서", count: plugins.length });
+      } else if (o.op === "replaceAll") {
+        if (!Array.isArray(o.plugins)) throw fail(400, "plugins 배열이 필요해요");
+        plugins = o.plugins.map((p) => ({ ...checkNew(p) }));
+        const names = new Set(); // 통째 바꾸기에서도 같은 이름 두 개는 허용(중복 정리는 따로 한다) — 형식만 확인
+        results.push({ op: "replaceAll", name: "전체", count: plugins.length });
+      } else throw fail(400, `알 수 없는 작업이에요: ${o.op}`);
+    }
+    return { f, results, text: serialize({ ...f.obj, plugins }, f.text) };
+  }
+  async function mutate({ ops, expectListSha } = {}) {
+    if (!Array.isArray(ops) || !ops.length) throw fail(400, "할 작업이 없어요");
+    if (ops.length > 500) throw fail(400, "한 번에 500개까지만 할 수 있어요");
+    if (ops.some((o) => o?.op === "order" || o?.op === "replaceAll") && !expectListSha) throw fail(400, "순서·통째 바꾸기는 expectListSha(목록 해시)가 필요해요");
+    ops = ops.map((o) => (o?.plugin?.scriptZ ? { ...o, plugin: inflateEdit(o.plugin) } : o));
+    ops = ops.map((o) => (o?.op === "replaceAll" && Array.isArray(o.plugins) ? { ...o, plugins: o.plugins.map((p) => (p?.scriptZ ? inflateEdit(p) : p)) } : o));
+    return commit(() => planOps(ops, expectListSha), "변경");
+  }
+  // 전체 내보내기(백업용): 코드·인자값까지 모두. gzip:true면 JSON 전체를 gzip+base64로 준다
+  async function exportAll({ gzip } = {}) {
+    need();
+    const f = load();
+    if (!f) throw fail(404, "설치된 플러그인 목록을 찾지 못했어요");
+    const out = { ok: true, listSha: listSha(f.obj.plugins), location: f.where };
+    if (gzip) return { ...out, plugins: undefined, pluginsZ: zlib.gzipSync(Buffer.from(JSON.stringify(f.obj.plugins), "utf8")).toString("base64") };
+    return { ...out, plugins: f.obj.plugins };
+  }
+
+  return { list, get, apply, mutate, exportAll, detect: () => detectHost(saveDir) };
 }
 
 module.exports = { createPlugins, detectHost, MAX_EDITS, SNAP_KEEP };
