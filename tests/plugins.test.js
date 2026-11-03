@@ -181,3 +181,21 @@ test("RisuBard가 아닌 호스트는 아직 지원하지 않는다(501)", async
   await assert.rejects(p.list(), (e) => e.status === 501 && e.extra?.host === "pocketrisu");
   await assert.rejects(p.apply({ edits: [{ name: "a", expectSha: sha("x"), script: "x" }] }), (e) => e.status === 501);
 });
+
+test("gzip: get은 scriptZ로 주고, apply는 scriptZ로 받은 코드를 풀어서 고친다", async () => {
+  const zlib = require("node:zlib");
+  const { setup, fakeRisubard, plugin } = require("./helpers/fakerisubard.cjs");
+  const s = setup({ plugins: [plugin("a")] });
+  const fr = await fakeRisubard(s.saveDir);
+  try {
+    const p = createPlugins({ saveDir: s.saveDir, dataDir: s.dataDir, risuUrl: fr.url, log() {} });
+    const g = await p.get({ name: "a", gzip: true });
+    assert.equal(g.script, undefined);
+    const text = zlib.gunzipSync(Buffer.from(g.scriptZ, "base64")).toString("utf8");
+    assert.match(text, /^\/\/@name a/);
+    const next = text.replace("a 1", "a 2");
+    await p.apply({ edits: [{ name: "a", expectSha: g.sha256, scriptZ: zlib.gzipSync(Buffer.from(next)).toString("base64") }] });
+    assert.equal(s.read("settings/app.json").plugins[0].script, next);
+    await assert.rejects(p.apply({ edits: [{ name: "a", expectSha: "0".repeat(64), scriptZ: "not-gzip" }] }), (e) => e.status === 400);
+  } finally { await fr.close(); }
+});

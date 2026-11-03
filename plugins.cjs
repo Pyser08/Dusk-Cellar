@@ -17,6 +17,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const zlib = require("node:zlib");
 
 const MAX_EDITS = 20;           // 한 번에 고칠 수 있는 플러그인 수
 const MAX_SCRIPT = 12 * 1024 * 1024;
@@ -91,18 +92,29 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     if (hits.length > 1) throw fail(400, `'${name}' 이름이 둘 이상이에요. index를 함께 보내 주세요`);
     return hits[0];
   }
-  async function get({ name, index }) {
+  async function get({ name, index, gzip }) {
     need();
     const f = load();
     const [p, i] = pick(f?.obj.plugins ?? [], { name: String(name ?? ""), index: Number.isInteger(index) ? index : undefined });
-    return { ok: true, name: p.name, index: i, script: String(p.script ?? ""), sha256: sha256(String(p.script ?? "")) };
+    const script = String(p.script ?? "");
+    // gzip: 리스 프록시는 응답을 조각조각 넘겨서 큰 코드(수 MB)는 오래 걸린다 → 압축해서(코드는 5~10배 줄어든다) 보내면 빨라진다
+    if (gzip) return { ok: true, name: p.name, index: i, scriptZ: zlib.gzipSync(Buffer.from(script, "utf8")).toString("base64"), sha256: sha256(script) };
+    return { ok: true, name: p.name, index: i, script, sha256: sha256(script) };
   }
 
+  // scriptZ(gzip+base64)로 온 코드는 풀어서 script로 바꾼다(최대 MAX_SCRIPT까지만 풀어서 압축 폭탄을 막는다)
+  function inflateEdit(e) {
+    if (!e || typeof e.scriptZ !== "string") return e;
+    let buf; try { buf = zlib.gunzipSync(Buffer.from(e.scriptZ, "base64"), { maxOutputLength: MAX_SCRIPT + 1 }); } catch { throw fail(400, `'${e.name}'의 압축된 코드를 풀지 못했어요`); }
+    const { scriptZ, ...rest } = e;
+    return { ...rest, script: buf.toString("utf8") };
+  }
   // 입력 모양 확인
   function validate(edits) {
     if (!Array.isArray(edits) || !edits.length) throw fail(400, "고칠 플러그인이 없어요");
     if (edits.length > MAX_EDITS) throw fail(400, `한 번에 ${MAX_EDITS}개까지만 고칠 수 있어요`);
     const seen = new Set();
+    edits = edits.map((e) => inflateEdit(e));
     return edits.map((e) => {
       if (!e || typeof e.name !== "string" || !e.name) throw fail(400, "플러그인 이름이 없어요");
       if (typeof e.script !== "string" || !e.script.trim()) throw fail(400, `'${e.name}'의 코드가 비어 있어요`);
