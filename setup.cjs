@@ -239,6 +239,6 @@ async function waitHealth(port, ms = 20000) {
   const h = await waitHealth(port);
   if (h) {
     say(`  응답해요: Dusk Cellar v${h.version} — http://127.0.0.1:${port}`);
-    say(`  플러그인 연결 토큰: ${path.join(dataDir, "token.txt")} (다른 사람에게 보내지 마세요)`);
+    say("  이제 리스에서 Dusk Atelier 설정 → 서버 → Dusk Cellar가 '연결됨'으로 보여요(따로 넣을 것 없음).");
   } else say(`  아직 응답이 없어요. pm2 logs 로 오류를 확인해 주세요. (포트 ${port})`);
 })().catch((e) => { say("설치 중 오류:", e?.message ?? e); process.exit(1); });

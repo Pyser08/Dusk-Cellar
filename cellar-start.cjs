@@ -58,7 +58,12 @@ if (flag("--role-server")) {
     });
     res.end(JSON.stringify(body));
   };
+  // 같은 기기(127.0.0.1)에서 온 요청은 토큰 없이 받는다: 플러그인은 리스 서버의 프록시(/proxy2)를 거쳐 오는데,
+  // 그 프록시는 리스 암호로 이미 막혀 있다. 다른 주소에서 온 요청(--dusk-host로 밖에 연 경우)은 토큰이 있어야 한다.
+  const REQUIRE_TOKEN = flag("--require-token");
+  const loopback = (req) => /^(127\.|::1$|::ffff:127\.)/.test(String(req.socket.remoteAddress ?? ""));
   const authed = (req) => {
+    if (!REQUIRE_TOKEN && loopback(req)) return true;
     const h = String(req.headers.authorization ?? "");
     const got = Buffer.from(h.startsWith("Bearer ") ? h.slice(7) : "");
     const want = Buffer.from(token);
@@ -115,7 +120,7 @@ const risu = spawn(process.execPath, [...process.execArgv, entry, ...pass], { cw
 let dusk = null, fails = 0, restartTimer = null;
 function startDusk() {
   if (stopping || flag("--no-dusk")) return;
-  const args = [__filename, "--role-server", "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", opt("--data-dir", path.join(__dirname, "dusk-data"))];
+  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", opt("--data-dir", path.join(__dirname, "dusk-data"))];
   const t0 = Date.now();
   dusk = spawn(process.execPath, args, { stdio: ["ignore", "inherit", "inherit", "ipc"], env: process.env });
   dusk.on("exit", (code) => {

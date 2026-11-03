@@ -33,11 +33,12 @@ test("리스와 Dusk Cellar가 함께 켜지고, 리스 폴더에서 리스를 �
   const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", data, "--", "--port", "6001"], { stdio: "ignore" });
   try {
     const h = await health(p);
-    assert.equal(h.ok, true); assert.equal(h.auth, false);
+    assert.equal(h.ok, true); assert.equal(h.name, "dusk-cellar");
+    assert.equal(h.auth, true, "같은 기기(127.0.0.1)는 토큰 없이 통과");
     const token = fs.readFileSync(path.join(data, "token.txt"), "utf8").trim();
     assert.equal((await health(p, token)).auth, true);
     const r = await fetch(`http://127.0.0.1:${p}/cellar/x`);
-    assert.equal(r.status, 401);
+    assert.equal(r.status, 404, "인증은 통과, 없는 주소");
     assert.equal(fs.readFileSync(path.join(root, "cwd.txt"), "utf8"), `${fs.realpathSync(root)}|--port,6001`);
   } finally { ch.kill("SIGTERM"); await exited(ch); }
 });
@@ -54,4 +55,16 @@ test("리스가 꺼지면 Dusk도 꺼지고 같은 종료 코드로 끝난다", 
 test("리스 시작 파일이 없으면 알려 주고 끝난다", async () => {
   const ch = spawn(process.execPath, [LAUNCHER, "--risu", "/없는/경로/server.cjs"], { stdio: "ignore" });
   assert.equal(await exited(ch), 66);
+});
+
+test("--require-token이면 같은 기기여도 토큰이 있어야 한다", async () => {
+  const root = fakeRisu(), p = port();
+  const data = path.join(root, "dusk-data");
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", data, "--require-token"], { stdio: "ignore" });
+  try {
+    assert.equal((await health(p)).auth, false);
+    assert.equal((await fetch(`http://127.0.0.1:${p}/cellar/x`)).status, 401);
+    const token = fs.readFileSync(path.join(data, "token.txt"), "utf8").trim();
+    assert.equal((await health(p, token)).auth, true);
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
 });
