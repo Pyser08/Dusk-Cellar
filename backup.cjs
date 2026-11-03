@@ -85,11 +85,15 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
   const ids = () => fs.readdirSync(root).filter((d) => ID_RE.test(d) && fs.existsSync(path.join(root, d, "manifest.json"))).sort();
 
   function list() {
-    return ids().reverse().map((id) => { const m = readManifest(id); return { id, at: m?.at ?? 0, label: m?.label ?? "", files: m?.count ?? 0, bytes: m?.bytes ?? 0, copied: m?.copied ?? 0, linked: m?.linked ?? 0, ms: m?.ms ?? 0 }; });
+    return ids().reverse().map((id) => { const m = readManifest(id); return { id, at: m?.at ?? 0, label: m?.label ?? "", files: m?.count ?? 0, bytes: m?.bytes ?? 0, copied: m?.copied ?? 0, unstable: !!m?.unstable, linked: m?.linked ?? 0, ms: m?.ms ?? 0 }; });
   }
 
   async function freeBytes(dir) {
     try { const s = await fsp.statfs(dir); return Number(s.bavail) * Number(s.bsize); } catch { return Infinity; }
+  }
+  // 백업이 디스크를 끝까지 채우면 리스 자신이 저장하지 못해 망가진다 → 백업이 끝난 뒤에도 이만큼은 남겨 둔다(2GB 또는 디스크의 5% 중 큰 쪽)
+  async function reserveBytes(dir) {
+    try { const s = await fsp.statfs(dir); return Math.max(2 * 1024 ** 3, Math.floor(Number(s.blocks) * Number(s.bsize) * 0.05)); } catch { return 2 * 1024 ** 3; }
   }
 
   // 백업 하나 만들기. 리스가 도는 중이어도 되도록, 복사 중에 바뀐 파일은 한 번 더 훑어 다시 담는다(최대 3번).
@@ -100,6 +104,9 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
     const prevId = ids().pop();
     const prev = prevId ? readManifest(prevId) : null;
     const tmp = path.join(root, id + ".tmp");
+    // 이전에 중간에 끊긴 백업이 남긴 임시 폴더는 디스크만 차지하므로 치운다(백업은 한 번에 하나만 돌고 복원 중에는 안 돌린다)
+    for (const d of fs.readdirSync(root)) if (d.endsWith(".tmp") && d !== id + ".tmp") await fsp.rm(path.join(root, d), { recursive: true, force: true }).catch(() => {});
+    if (!fs.existsSync(saveDir) || !fs.statSync(saveDir).isDirectory()) throw Object.assign(new Error(`세이브 폴더를 찾지 못해서 백업하지 않았어요(${saveDir})`), { status: 422 });
     await fsp.rm(tmp, { recursive: true, force: true });
     const manifest = { v: 1, id, at: now().getTime(), label, sources: {}, count: 0, bytes: 0, copied: 0, linked: 0 };
     try {
@@ -111,6 +118,8 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
           return all;
         };
         let files = filterOut(await scan(src));
+        // 비어 있는 세이브를 '백업'으로 남기면, 나중에 복원할 때 세이브 전체가 지워진다 → 만들지 않는다
+        if (name === "save" && !Object.keys(files).length) throw Object.assign(new Error("세이브 폴더에 파일이 하나도 없어서 백업하지 않았어요(주소가 맞는지 확인해 주세요)"), { status: 422 });
         const before = prev?.sources?.[name] ?? {};
         // SQLite는 온라인 백업으로 먼저(내용이 계속 바뀌므로 링크하지 않고 매번 새로)
         for (const r of sqliteFiles) {
@@ -124,11 +133,12 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
         // 디스크 확인: 새로 복사할 양 + 여유 64MB
         const need = Object.entries(files).reduce((n, [r, m]) => n + (same(m, before[r]) ? 0 : m[0]), 0);
         const free = await freeBytes(root);
-        if (need + 64 * 1024 * 1024 > free) throw Object.assign(new Error(`디스크 공간이 부족해요(필요 ${Math.ceil(need / 1048576)}MB, 남음 ${Math.floor(free / 1048576)}MB)`), { status: 507 });
+        if (need + await reserveBytes(root) > free) throw Object.assign(new Error(`디스크 공간이 부족해요(필요 ${Math.ceil(need / 1048576)}MB + 리스를 위한 여유 ${Math.ceil(await reserveBytes(root) / 1048576)}MB, 남음 ${Math.floor(free / 1048576)}MB)`), { status: 507 });
         if (job) { job.phase = name; job.total += Object.keys(files).length; job.done += sqliteFiles.size; }
+        let settled = false;
         for (let pass = 0; pass < 3; pass++) {
           const todo = Object.entries(files).filter(([r, m]) => !sqliteFiles.has(r) && !same(got[r], m));
-          if (!todo.length) break;
+          if (!todo.length) { settled = true; break; }
           await pool(todo, PARALLEL, async ([r, m]) => {
             const dst = path.join(tmp, name, r);
             if (got[r]) await fsp.rm(dst, { force: true });
@@ -150,6 +160,8 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
           for (const r of sqliteFiles) files[r] = got[r];
           for (const r of Object.keys(got)) if (!files[r]) { delete got[r]; await fsp.rm(path.join(tmp, name, r), { force: true }); }
         }
+        if (!settled) settled = Object.entries(files).every(([r, m]) => sqliteFiles.has(r) || same(got[r], m));   // 마지막 바퀴 뒤에도 바뀐 게 없는지
+        if (!settled) manifest.unstable = true;   // 백업하는 동안 리스가 계속 파일을 바꿨다 → 파일끼리 시점이 어긋날 수 있다
         manifest.sources[name] = got;
         manifest.count += Object.keys(got).length;
         manifest.bytes += Object.values(got).reduce((n, m) => n + m[0], 0);
@@ -166,6 +178,23 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
     return { id, files: manifest.count, bytes: manifest.bytes, copied: manifest.copied, linked: manifest.linked, ms: manifest.ms };
   }
 
+  // 복원 전 점검(리스를 멈추기 전에): 백업의 모든 파일이 실제로 있고 크기가 맞는지, 세이브가 비어 있지 않은지 본다.
+  // 하나라도 어긋나면 복원을 시작하지 않는다(시작한 뒤에 실패하면 세이브가 반쯤 바뀐 채로 남는다).
+  async function verify(id) {
+    if (!ID_RE.test(String(id))) throw Object.assign(new Error("백업 이름이 맞지 않아요"), { status: 400 });
+    const m = readManifest(id);
+    if (!m) throw Object.assign(new Error("없는 백업이에요"), { status: 404 });
+    if (!Object.keys(m.sources?.save ?? {}).length) throw Object.assign(new Error("이 백업에는 세이브 파일이 하나도 없어서 복원하지 않아요(복원하면 세이브가 모두 지워져요)"), { status: 422 });
+    const bad = [];
+    for (const [name] of sources()) {
+      const want = m.sources?.[name] ?? {};
+      const have = await scan(path.join(root, id, name));
+      for (const [r, mm] of Object.entries(want)) if (!have[r] || have[r][0] !== mm[0]) bad.push(`${name}/${r}`);
+    }
+    if (bad.length) throw Object.assign(new Error(`백업 파일이 빠졌거나 달라서 복원하지 않아요(${bad.length}개: ${bad.slice(0, 3).join(", ")}${bad.length > 3 ? " …" : ""})`), { status: 422 });
+    return { ok: true, files: m.count };
+  }
+
   // 복원: 리스와 Cellar 서버가 멈춘 상태에서 불러야 한다(실행기가 처리). 다른 파일만 바꾸고 없는 파일은 지운다.
   async function restore(id) {
     if (!ID_RE.test(String(id))) throw Object.assign(new Error("백업 이름이 맞지 않아요"), { status: 400 });
@@ -176,13 +205,14 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
     for (const [name, dir] of sources()) {
       const want = m.sources?.[name] ?? {};
       const have = await scan(dir);
-      await pool(Object.keys(have).filter((r) => !want[r]), PARALLEL, async (r) => { await fsp.rm(path.join(dir, r), { force: true }); removed++; });
+      // 먼저 백업의 파일을 채우고, 지우는 건 맨 마지막에 한다(중간에 실패해도 파일이 모자란 상태가 되지 않게)
       await pool(Object.entries(want).filter(([r, mm]) => !same(have[r], mm)), PARALLEL, async ([r, mm]) => {
         const dst = path.join(dir, r), tmpf = dst + ".dusk-restore";
         await copyKeep(path.join(root, id, name, r), tmpf, mm);
         await fsp.rename(tmpf, dst);
         replaced++;
       });
+      await pool(Object.keys(have).filter((r) => !want[r]), PARALLEL, async (r) => { await fsp.rm(path.join(dir, r), { force: true }); removed++; });
       await removeEmptyDirs(dir);
     }
     log(`복원 ${id}: 바꿈 ${replaced} · 지움 ${removed}, ${Date.now() - t0}ms`);
@@ -210,7 +240,7 @@ function createBackups({ dataDir, saveDir, memDir = path.join(dataDir, "mem"), k
     return j;
   }
 
-  return { list, create, startCreate, restore, remove, status: () => job, has: (id) => !!readManifest(id), root };
+  return { list, create, startCreate, restore, verify, remove, status: () => job, has: (id) => !!readManifest(id), root };
 }
 
 module.exports = { createBackups, scan, ID_RE };

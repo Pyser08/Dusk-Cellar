@@ -128,3 +128,41 @@ test("RisuBard 잠금 폴더는 백업하지도 복원으로 건드리지도 않
   await w.b.restore(a.id);
   assert.equal(read(path.join(w.save, ".risubard-server.lock", "owner.json")), '{"pid":2}');
 });
+
+test("세이브가 비었거나 없으면 백업하지 않는다", async () => {
+  const w = world();
+  fs.rmSync(w.save, { recursive: true });
+  await assert.rejects(() => w.b.create(), /세이브/);
+  fs.mkdirSync(w.save);
+  await assert.rejects(() => w.b.create(), /하나도 없/);
+  assert.equal(w.b.list().length, 0);
+});
+
+test("verify: 정상 백업은 통과, 파일이 빠지거나 크기가 다르면 거부", async () => {
+  const w = world();
+  const a = await w.b.create();
+  await w.b.verify(a.id);
+  const f = path.join(w.data, "backups", a.id, "save", "kv", "manifest.json");
+  fs.writeFileSync(f, "x");
+  await assert.rejects(() => w.b.verify(a.id));
+  fs.rmSync(f);
+  await assert.rejects(() => w.b.verify(a.id));
+});
+
+test("복원: 없던 파일은 지우고 바뀐 파일은 되돌린다(순서: 덮어쓰기 후 삭제)", async () => {
+  const w = world();
+  const a = await w.b.create();
+  put(path.join(w.save, "database.bin"), "broken!!");
+  put(path.join(w.save, "extra.bin"), "x");
+  await w.b.restore(a.id);
+  assert.equal(read(path.join(w.save, "database.bin")), "db-1");
+  assert.equal(fs.existsSync(path.join(w.save, "extra.bin")), false);
+});
+
+test("오래 남은 .tmp 백업 폴더는 새 백업 때 정리", async () => {
+  const w = world();
+  const stale = path.join(w.data, "backups", "old.tmp");
+  put(path.join(stale, "x"), "1");
+  await w.b.create();
+  assert.equal(fs.existsSync(stale), false);
+});

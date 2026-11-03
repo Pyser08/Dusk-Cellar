@@ -83,11 +83,12 @@ node Dusk-Cellar/cellar-start.cjs -- --port 6001   # -- 뒤는 리스에 그대�
 - 리스가 도는 중에도 백업할 수 있어요. 복사하는 동안 바뀐 파일은 한 번 더 훑어서 다시 담아요.
 - PocketRisu처럼 SQLite(`save/risuai.db`)에 저장하는 리스는 SQLite 온라인 백업으로 깨지지 않게 담아요(이 파일은 매번 통째로, Node 22.16 이상). RisuBard 실행 잠금 폴더(`.risubard-server.lock`)는 건드리지 않아요.
 - **복원**은 실행기가 리스와 Cellar를 잠깐 멈추고 → 지금 상태를 '복원 전 자동' 백업으로 남기고 → 다른 파일만 바꾸고 백업에 없는 파일은 지운 뒤 → 다시 켜요. 복원 직후에는 **리스를 열어 둔 화면을 모두 새로고침**하세요(새로고침 전 화면이 옛 데이터를 다시 저장할 수 있어요).
+- **안전장치(복원 중 데이터가 망가지지 않게)**: 세이브가 비었거나 없으면 백업하지 않아요 · 디스크 여유가 max(2GiB, 5%) 아래로 줄 것 같으면 백업하지 않아요 · 백업 중에도 파일이 계속 바뀌면 `unstable`로 표시해요 · 복원 전에 백업의 파일 수·크기를 점검하고(리스는 그때까지 안 멈춰요) 이상하면 거부해요 · 복원은 덮어쓰기를 먼저, 없던 파일 삭제는 마지막에 해요 · 복원이 실패하면 '복원 전 자동' 백업으로 자동으로 되돌려요(그것도 실패하면 리스를 켜지 않고 서버가 다시 켜질 때 이어서 시도, 최대 2번) · 진행은 `restore-status.json`, 이어하기 표식은 `restore.pending.json`.
 - 기본 5개를 보관해요(`--keep`). 세이브 위치가 다르면 `--save-dir`.
 
 | 요청 | 하는 일 |
 |---|---|
-| `GET /cellar/backup` | 백업 목록과 지금 작업 상태 |
+| `GET /cellar/backup` | 백업 목록(`unstable` 포함)·지금 작업 상태·`restore`(복원 단계 queued/verifying/running/done/failed와 오류) |
 | `POST /cellar/backup` `{action:"create", label?}` | 백업 시작(작업으로 돌고 GET으로 진행 확인) |
 | `POST /cellar/backup` `{action:"restore", id}` | 복원(리스가 잠깐 꺼졌다 켜짐) |
 | `POST /cellar/backup` `{action:"delete", id}` | 백업 지우기 |

@@ -255,3 +255,30 @@ test("ESM import로 불러와도(pm2 방식) 정상적으로 실행기가 켜진
   const ch = spawn(process.execPath, [loader, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d")], { stdio: "ignore" });
   try { await health(p); } finally { ch.kill("SIGTERM"); await exited(ch); }
 });
+
+test("복원 전 점검에서 실패하면 리스를 멈추지 않고 실패 상태를 남긴다", async () => {
+  const root = fakeRisu(), p = port();
+  fs.writeFileSync(path.join(root, "server", "node", "server.cjs"),
+    `const fs=require("fs");fs.appendFileSync("starts.txt","x");process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000);`);
+  fs.mkdirSync(path.join(root, "save"), { recursive: true });
+  fs.writeFileSync(path.join(root, "save", "database.bin"), "good");
+  const data = path.join(root, "dusk-data");
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", data], { stdio: "ignore" });
+  const api = `http://127.0.0.1:${p}/cellar/backup`;
+  const post = async (b) => (await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) })).json();
+  try {
+    await health(p);
+    await post({ action: "create" });
+    let list;
+    for (let i = 0; i < 50; i++) { list = await (await fetch(api)).json(); if (list.job?.finishedAt) break; await sleep(100); }
+    const id = list.items[0].id;
+    fs.rmSync(path.join(data, "backups", id, "save", "database.bin"));
+    await post({ action: "restore", id });
+    let st;
+    for (let i = 0; i < 50; i++) { st = (await (await fetch(api)).json()).restore; if (st?.phase === "failed") break; await sleep(100); }
+    assert.equal(st?.phase, "failed");
+    assert.equal(fs.readFileSync(path.join(root, "starts.txt"), "utf8"), "x", "리스를 다시 켜지 않음(멈춘 적 없음)");
+    assert.equal(fs.readFileSync(path.join(root, "save", "database.bin"), "utf8"), "good");
+    assert.equal(fs.existsSync(path.join(data, "restore.pending.json")), false);
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
+});

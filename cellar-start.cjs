@@ -130,7 +130,7 @@ if (flag("--role-server")) {
       }
       if (url.pathname === "/cellar/backup") {
         if (!backups) return send(res, 404, { ok: false, error: "세이브 폴더를 몰라서 백업을 쓸 수 없어요(--save-dir)" });
-        if (req.method === "GET") return send(res, 200, { ok: true, items: backups.list(), job: backups.status() });
+        if (req.method === "GET") return send(res, 200, { ok: true, items: backups.list(), job: backups.status(), restore: (() => { try { return JSON.parse(fs.readFileSync(path.join(dataDir, "restore-status.json"), "utf8")); } catch { return null; } })() });
         if (req.method === "POST") {
           const b = await readJson(req);
           if (b.action === "create") return send(res, 200, { ok: true, job: backups.startCreate({ label: String(b.label ?? "").slice(0, 40) }) });
@@ -140,6 +140,7 @@ if (flag("--role-server")) {
             if (!backups.has(String(b.id))) return send(res, 404, { ok: false, error: "없는 백업이에요" });
             const j = backups.status();
             if (j && !j.finishedAt) return send(res, 409, { ok: false, error: "백업이 끝난 뒤에 복원해 주세요" });
+            try { fs.writeFileSync(path.join(dataDir, "restore-status.json"), JSON.stringify({ id: String(b.id), phase: "queued", at: Date.now(), updatedAt: Date.now() })); } catch { /* 무시 */ }
             send(res, 200, { ok: true, restarting: true });
             // 응답이 나간 뒤에 실행기에게 부탁한다(리스·Cellar를 멈추고 복원한 뒤 다시 켬)
             setTimeout(() => process.send({ type: "restore", id: String(b.id) }), 300);
@@ -258,6 +259,8 @@ const saveDir = path.resolve(opt("--save-dir", process.env.RISUBARD_DATA_ROOT?.t
 let stopping = false, restoring = false;
 log(`리스 시작: ${path.relative(process.cwd(), entry) || entry}`);
 let risu = null;
+// 지난번에 복원하다 실행기가 죽었으면 리스를 켜기 전에 이어서 끝낸다
+function readPendingAtBoot() { try { const p = JSON.parse(fs.readFileSync(path.join(dataDir, "restore.pending.json"), "utf8")); return p?.id ? p : null; } catch { return null; } }
 function startRisu() {
   risu = spawn(process.execPath, [...cleanExecArgv(process.execArgv), entry, ...pass], { cwd: risuRoot, stdio: "inherit", env: { ...process.env, DUSK_CELLAR_LAUNCHER: "1" } });
   const me = risu;
@@ -271,30 +274,66 @@ function startRisu() {
   });
   me.on("error", (e) => { log("리스를 켜지 못했어요:", e.message); shutdown("SIGTERM"); process.exit(1); });
 }
-startRisu();
+const pendingAtBoot = readPendingAtBoot();
+if (!pendingAtBoot) startRisu();
 const exitOf = (child) => new Promise((r) => { if (!child || child.exitCode !== null || child.signalCode !== null) return r(); child.once("exit", () => r()); });
 
-// 복원: 리스·Cellar를 멈추고 → 지금 상태를 자동 백업 → 고른 백업으로 맞춘 뒤 → 다시 켠다. 실패해도 리스는 다시 켠다.
-async function doRestore(id) {
+// 복원: 리스·Cellar를 멈추고 → 지금 상태를 자동 백업 → 고른 백업으로 맞춘 뒤 → 다시 켠다.
+//   · 멈추기 전에 백업이 온전한지 점검한다(어긋나면 시작하지 않고 리스는 그대로 둔다).
+//   · 도중에 실패하면 '복원 전 자동' 백업으로 되돌린다. 실행기가 도중에 죽어도 다음에 켜질 때 이어서 끝낸다(restore.pending.json).
+//   · 진행 상황은 restore-status.json에 남겨 플러그인이 읽는다.
+const pendingFile = path.join(dataDir, "restore.pending.json"), statusFile = path.join(dataDir, "restore-status.json");
+const readJsonFile = (f) => { try { return JSON.parse(fs.readFileSync(f, "utf8")); } catch { return null; } };
+const writeJsonFile = (f, o) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f + ".tmp", JSON.stringify(o)); fs.renameSync(f + ".tmp", f); };
+const setStatus = (id, patch) => { try { writeJsonFile(statusFile, { ...(readJsonFile(statusFile)?.id === id ? readJsonFile(statusFile) : { id, at: Date.now() }), ...patch, updatedAt: Date.now() }); } catch { /* 상태 기록 실패는 무시 */ } };
+async function doRestore(id, resume = false) {
   if (restoring || stopping) return;
   restoring = true;
-  log(`복원 시작: ${id} — 리스를 잠깐 멈춥니다`);
+  let stopped = resume, hold = false;   // 이어서 하는 경우엔 리스를 아직 안 켠 상태. hold: 되돌리기까지 실패하면 반쯤 바뀐 세이브로 리스를 켜지 않는다
+  const { createBackups } = require("./backup.cjs");
+  const b = createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) + 1 || 6, log });
   try {
     clearTimeout(restartTimer);
-    const r = risu, d = dusk;
-    if (r && r.exitCode === null) r.kill("SIGTERM");
-    if (d) d.kill("SIGTERM");
-    await Promise.all([exitOf(r), exitOf(d)]);
-    const { createBackups } = require("./backup.cjs");
-    const b = createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) + 1 || 6, log });
-    await b.create({ label: "복원 전 자동" });
-    const res = await b.restore(id);
-    log(`복원 끝: 바꾼 파일 ${res.replaced}개, 지운 파일 ${res.removed}개`);
+    let pend = resume ? readJsonFile(pendingFile) : null;
+    if (resume) {
+      pend.attempts = (pend.attempts ?? 0) + 1;
+      if (pend.attempts > 2) { log("복원을 이어서 하려 했지만 두 번 넘게 실패해서 포기해요. 리스는 지금 상태로 켭니다. '복원 전 자동' 백업으로 되돌릴 수 있어요"); setStatus(id, { phase: "failed", error: "복원이 도중에 계속 끊겨서 멈췄어요. '복원 전 자동' 백업이 있으니 그걸로 되돌려 주세요" }); fs.rmSync(pendingFile, { force: true }); return; }
+      writeJsonFile(pendingFile, pend);
+      log(`끊긴 복원을 이어서 합니다: ${id} (${pend.attempts}번째)`);
+    } else {
+      setStatus(id, { phase: "verifying" });
+      await b.verify(id);   // 어긋나면 여기서 던지고, 리스는 아직 안 멈췄다
+      pend = { id, at: Date.now(), attempts: 0 };
+      writeJsonFile(pendingFile, pend);
+      log(`복원 시작: ${id} — 리스를 잠깐 멈춥니다`);
+      const r = risu, d = dusk;
+      stopped = true;
+      if (r && r.exitCode === null) r.kill("SIGTERM");
+      if (d) d.kill("SIGTERM");
+      await Promise.all([exitOf(r), exitOf(d)]);
+    }
+    setStatus(id, { phase: "running" });
+    if (!pend.pre) { pend.pre = (await b.create({ label: "복원 전 자동" })).id; writeJsonFile(pendingFile, pend); }
+    try {
+      const res = await b.restore(id);
+      log(`복원 끝: 바꾼 파일 ${res.replaced}개, 지운 파일 ${res.removed}개`);
+    } catch (e) {
+      log(`복원이 도중에 실패해서 '복원 전 자동' 백업(${pend.pre})으로 되돌려요:`, e?.message ?? e);
+      try { await b.restore(pend.pre); }
+      catch (e2) { throw Object.assign(new Error(`복원에 실패했고 원래 상태로 되돌리는 것도 실패했어요(${e2?.message ?? e2}). 리스를 켜지 않았어요. 디스크를 확인한 뒤 서버를 다시 시작하면 복원을 이어서 시도해요`), { holdRisu: true }); }
+      throw new Error(`복원에 실패해서 원래 상태로 되돌렸어요: ${e?.message ?? e}`);
+    }
+    fs.rmSync(pendingFile, { force: true });
+    setStatus(id, { phase: "done", error: "" });
   } catch (e) {
-    log("복원 실패 — 리스는 그대로 다시 켭니다:", e?.message ?? e);
+    const msg = String(e?.message ?? e);
+    log("복원 실패:", msg);
+    setStatus(id, { phase: "failed", error: msg });
+    if (e?.holdRisu) hold = true;
+    else if (stopped) { /* 되돌리기까지 했거나, 아직 아무것도 안 바꿨다 → pending은 지운다 */ fs.rmSync(pendingFile, { force: true }); }
   } finally {
     restoring = false;
-    if (!stopping) { startRisu(); fails = 0; startDusk(); }
+    if (!stopping && stopped && !hold) { startRisu(); fails = 0; startDusk(); }
   }
 }
 
@@ -320,7 +359,7 @@ function startDusk() {
     restartTimer = setTimeout(startDusk, wait);
   });
 }
-startDusk();
+if (pendingAtBoot) doRestore(pendingAtBoot.id, true); else startDusk();
 
 function shutdown(sig) {
   if (stopping) return;

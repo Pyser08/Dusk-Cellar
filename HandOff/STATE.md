@@ -75,3 +75,8 @@
 - 프로세스 증식 방지(2026-11-03): cellar-start.cjs는 require() 금지(throw), 실행기가 띄운 프로세스(DUSK_CELLAR_LAUNCHER=1) 안에서 실행기가 또 켜지면 종료, 리스에 넘기는 Node 옵션에서 -e/-p/-c 제거. (옛 update 검사가 `node -e require(cellar-start.cjs)`로 실행기를 재귀 실행해 서버 CPU 100% 유발)
 - 정정(2026-11-03): require.main 가드는 pm2가 ESM import로 실행기를 불러올 때 정상 실행까지 막아 리스가 안 뜸 → execArgv(-e/-p)로만 거부하도록 변경. ESM import 실행 시험 추가.
 - 실측(2026-11-03, 사용자 RisuBard): 플러그인 수정 total 10.8s = accept 7.7s + detect 1.5s(RisuBard) + plan/check 0.9s + write 0.34s … RisuBard 쪽이 약 86%. 우리 쪽은 두 번 읽던 설정 파일을 한 번으로(파일이 그대로면 처음 계산 재사용).
+
+## 백업·복원 안전 점검 (2026-11-03)
+- 위험 점검 결과 보완: 빈/없는 세이브 백업 거부, 디스크 예비 max(2GiB,5%), 오래된 .tmp 정리, unstable 표시, verify(복원 전 점검), 복원 순서(덮어쓰기→삭제), doRestore 실패 시 '복원 전 자동'으로 자동 되돌리기, 되돌리기도 실패하면 리스 보류, restore.pending.json으로 재시작 후 이어하기(최대 2회), restore-status.json → GET restore 필드.
+- 플러그인(Atelier cellarbackup.js)은 복원 응답이 아니라 status를 폴링해 성공/실패를 판단.
+- 확인 못 한 것: 실제 서버에서의 복원 실패·중단·이어하기(가짜 리스 테스트만).
