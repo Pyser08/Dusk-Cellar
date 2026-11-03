@@ -73,3 +73,4 @@
 - 고아 Cellar 자동 인수: 포트가 사용 중이고 health의 dataId(데이터 폴더 해시)가 같으면 pid를 SIGTERM으로 끄고 이어받음. 설치기는 pm2 start에 --kill-timeout 10000.
 - 버그 수정(2026-11-03): 업데이트 후 검사가 cellar-start.cjs를 require해서 실행기가 통째로 켜지며 고아 Cellar가 생기던 문제. 이제 node --check(문법)만 하고, 불러오면 실행되는 cellar-start.cjs·setup.cjs는 절대 require하지 않는다.
 - 프로세스 증식 방지(2026-11-03): cellar-start.cjs는 require() 금지(throw), 실행기가 띄운 프로세스(DUSK_CELLAR_LAUNCHER=1) 안에서 실행기가 또 켜지면 종료, 리스에 넘기는 Node 옵션에서 -e/-p/-c 제거. (옛 update 검사가 `node -e require(cellar-start.cjs)`로 실행기를 재귀 실행해 서버 CPU 100% 유발)
+- 정정(2026-11-03): require.main 가드는 pm2가 ESM import로 실행기를 불러올 때 정상 실행까지 막아 리스가 안 뜸 → execArgv(-e/-p)로만 거부하도록 변경. ESM import 실행 시험 추가.

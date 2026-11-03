@@ -230,7 +230,7 @@ test("다른 데이터 폴더의 Cellar가 잡은 포트는 건드리지 않고 
   } finally { a.kill("SIGKILL"); }
 });
 
-test("require()로 불러오면 실행기를 켜지 않고 바로 오류로 끝난다(프로세스 증식 방지)", async () => {
+test("node -e 로 불러오면 실행기를 켜지 않고 바로 오류로 끝난다(프로세스 증식 방지)", async () => {
   const root = fakeRisu(), p = port();
   const ch = spawn(process.execPath, ["-e", `require(${JSON.stringify(LAUNCHER)})`, path.join(root, "server/node/server.cjs"), "--dusk-port", String(p)], { stdio: "ignore" });
   const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 5000); ch.once("exit", (c) => { clearTimeout(t); res(c); }); });
@@ -246,4 +246,12 @@ test("실행기가 띄운 프로세스 안에서는 실행기가 또 켜지지 �
   const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 5000); ch.once("exit", (c) => { clearTimeout(t); res(c); }); });
   if (code === "안 끝남") ch.kill("SIGKILL");
   assert.equal(code, 1);
+});
+
+test("ESM import로 불러와도(pm2 방식) 정상적으로 실행기가 켜진다", async () => {
+  const root = fakeRisu(), p = port();
+  const loader = path.join(root, "esm-loader.mjs");
+  fs.writeFileSync(loader, `import(${JSON.stringify(LAUNCHER)}).catch((e) => { console.error(e); process.exit(9); });\n`);
+  const ch = spawn(process.execPath, [loader, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d")], { stdio: "ignore" });
+  try { await health(p); } finally { ch.kill("SIGTERM"); await exited(ch); }
 });

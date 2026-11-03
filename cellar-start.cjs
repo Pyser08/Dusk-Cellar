@@ -27,8 +27,9 @@ const path = require("node:path");
 const http = require("node:http");
 const crypto = require("node:crypto");
 
-// 이 파일은 직접 실행하는 파일이다. require()로 불러오면 실행기가 통째로 켜져서(리스·Cellar를 또 띄움) 프로세스가 끝없이 불어난다.
-if (require.main !== module) throw new Error("cellar-start.cjs는 직접 실행하는 파일이에요(require로 불러오면 안 돼요)");
+// node -e / -p 로 불러오면(require("…/cellar-start.cjs")) 실행기가 통째로 켜져서 프로세스가 끝없이 불어난다 → 거부한다.
+// (require.main으로 구분하면 pm2처럼 ESM 방식으로 불러오는 실행 환경에서 정상 실행까지 막혀서 execArgv로만 본다)
+if (process.execArgv.some((a) => a === "-e" || a === "--eval" || a === "-p" || a === "--print" || /^--(eval|print)=/.test(a))) throw new Error("cellar-start.cjs는 node -e 로 불러올 수 없어요(직접 실행하는 파일이에요)");
 
 const VERSION = "0.1.0";
 const argv = process.argv.slice(2);
