@@ -207,10 +207,12 @@ function createPlugins({ saveDir, dataDir, risuUrl, altUrls, hostDir, codecLib, 
       const T0 = Date.now(), tm = {}; let tl = T0;
       const lap = (k) => { const n = Date.now(); tm[k] = (tm[k] ?? 0) + n - tl; tl = n; };
       const host = need();
-      let conn = null, rconn = null;
-      if (host === "risubard") { await planFn(); lap("plan"); conn = await connect(); lap("login"); if (await conn.pending()) throw fail(409, "리스에 검토 대기 중인 외부 변경이 있어요. 리스 화면에서 먼저 처리한 뒤 다시 해 주세요", { pending: true }); }
+      let conn = null, rconn = null, first = null, sig0 = null;
+      const sigOf = (file) => { try { const st = fs.statSync(file); return `${st.size}:${st.mtimeMs}`; } catch { return null; } };
+      if (host === "risubard") { first = await planFn(); sig0 = sigOf(first.f.file); lap("plan"); conn = await connect(); lap("login"); if (await conn.pending()) throw fail(409, "리스에 검토 대기 중인 외부 변경이 있어요. 리스 화면에서 먼저 처리한 뒤 다시 해 주세요", { pending: true }); }
       else if (host === "pocketrisu") { rconn = await client.connect(); lap("login"); }
-      const { f, results, text, plugins: nextPlugins } = await planFn(rconn);   // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인
+      // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인한다(파일이 그대로면 처음 계산을 그대로 쓴다)
+      const { f, results, text, plugins: nextPlugins } = first && sigOf(first.f.file) === sig0 ? first : await planFn(rconn);
       lap("check");
       const snap = snapshot(f, results, host);
       lap("snapshot");
