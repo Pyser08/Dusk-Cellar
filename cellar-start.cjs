@@ -16,6 +16,7 @@
 //   · Ctrl+C·종료 신호는 둘 다에게 전한다.
 //   · Node 기본 기능만 쓴다(npm install 불필요). 리스 파일은 읽지도 고치지도 않는다.
 //   · Dusk 데이터는 이 파일 옆 dusk-data/ 에만 쓴다.
+//   · 기억 저장소 코드는 같은 폴더의 store.cjs(함께 있어야 한다).
 "use strict";
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -69,16 +70,41 @@ if (flag("--role-server")) {
     const want = Buffer.from(token);
     return got.length === want.length && crypto.timingSafeEqual(got, want);
   };
-  const server = http.createServer((req, res) => {
+  const { createStore, MAX_VALUE } = require("./store.cjs");
+  const mem = createStore({ dir: dataDir, log });
+  // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
+  const readJson = (req) => new Promise((resolve, reject) => {
+    const limit = MAX_VALUE + 64 * 1024;
+    let size = 0; const chunks = [];
+    req.on("data", (c) => { size += c.length; if (size > limit) { reject(Object.assign(new Error("요청이 너무 커요"), { status: 413 })); req.destroy(); } else chunks.push(c); });
+    req.on("end", () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch { reject(Object.assign(new Error("JSON이 아니에요"), { status: 400 })); } });
+    req.on("error", reject);
+  });
+  const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, "http://x");
       if (req.method === "OPTIONS") return send(res, 204, {});
-      // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음)
-      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req) });
+      // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음). features: 이 서버가 지원하는 기능
+      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: ["mem"] });
       if (!authed(req)) return send(res, 401, { ok: false, error: "토큰이 없거나 달라요" });
+
+      // 기억 저장소(store.cjs). 쓰기는 모두 POST /cellar/mem/batch로도 보낼 수 있다(프록시가 PUT·DELETE를 막을 때 대비)
+      if (url.pathname === "/cellar/mem" && req.method === "GET") return send(res, 200, { ok: true, items: mem.list(url.searchParams.get("prefix") ?? "") });
+      if (url.pathname === "/cellar/mem/batch" && req.method === "POST") return send(res, 200, { ok: true, results: mem.batch((await readJson(req)).ops) });
+      if (url.pathname.startsWith("/cellar/mem/")) {
+        const key = decodeURIComponent(url.pathname.slice("/cellar/mem/".length));
+        if (req.method === "GET") {
+          const got = mem.get(key);
+          return got ? send(res, 200, { ok: true, ...got }) : send(res, 404, { ok: false, error: "없는 키예요" });
+        }
+        if (req.method === "PUT") { const b = await readJson(req); return send(res, 200, mem.put(key, b.value, b)); }
+        if (req.method === "DELETE") return send(res, 200, mem.del(key, { baseRev: url.searchParams.get("baseRev") ?? undefined }));
+      }
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {
-      send(res, 500, { ok: false, error: String(e?.message ?? e) });
+      // 충돌(409)이면 서버의 현재 rev를 알려 준다. 플러그인은 GET으로 값을 받아 합친 뒤 그 rev로 다시 쓴다
+      const extra = e.conflict ? { conflict: true, rev: e.rev } : {};
+      send(res, e.status ?? 500, { ok: false, error: String(e?.message ?? e), ...extra });
     }
   });
   server.on("error", (e) => {

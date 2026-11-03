@@ -2,7 +2,7 @@
 
 [Dusk Atelier](https://github.com/Pyser08/Dusk-Atelier) 플러그인의 백그라운드 서버예요. 아틀리에 아래층의 저장고처럼, 리스(RisuAI 서버) 옆에서 조용히 기억을 보관하고 일해요.
 
-> 지금은 **뼈대 단계**예요. 리스와 함께 켜지고 꺼지는 실행 구조와 연결 확인(`/cellar/health`)까지만 있어요. 기억 백업·검색 기능은 다음 단계에서 붙어요. 플러그인은 Cellar가 없어도 지금처럼 동작해요.
+> 지금은 **기억 저장소** 단계예요. 리스와 함께 켜지고 꺼지는 실행 구조, 연결 확인(`/cellar/health`), 기억 저장·읽기(`/cellar/mem`)가 있어요. 플러그인은 Cellar가 없어도 지금처럼 동작해요.
 
 ## 준비물
 
@@ -54,6 +54,24 @@ node Dusk-Cellar/cellar-start.cjs -- --port 6001   # -- 뒤는 리스에 그대�
 - 리스가 꺼지면 Cellar도 끄고 같은 종료 코드로 끝나요.
 - Cellar만 죽으면 Cellar만 다시 켜요(최대 5번).
 - 리스 파일은 읽지도 고치지도 않아요. Cellar 데이터는 `Dusk-Cellar/dusk-data/`에만 써요.
+
+## 기억 저장소 (`/cellar/mem`)
+
+플러그인이 서버를 감지하면 장기기억을 여기에만 보내요(플러그인 안에는 저장하지 않고, 연결이 끊긴 동안만 임시로 쌓아 두었다가 다시 올려요).
+
+| 요청 | 하는 일 |
+|---|---|
+| `GET /cellar/mem?prefix=` | 키 목록(rev·수정 시각·크기) |
+| `GET /cellar/mem/<키>` | 값과 rev |
+| `PUT /cellar/mem/<키>` `{value, baseRev?, opId?}` | 쓰기 |
+| `DELETE /cellar/mem/<키>?baseRev=` | 삭제 |
+| `POST /cellar/mem/batch` `{ops:[{op:"put"\|"del", key, ...}]}` | 여러 개 한 번에(차례대로, 하나가 실패해도 나머지는 계속) |
+
+- 키는 `dusk.mem.`으로 시작해야 하고, 값은 문자열(최대 16MB)이에요.
+- `baseRev`: 내가 본 rev가 지금도 그대로일 때만 써요. 달라졌으면 `409`와 현재 rev를 돌려줘요(`0` = 아직 없어야 함). 생략하면 덮어써요.
+- `opId`: 같은 쓰기를 다시 보내도(연결이 끊겼다 재전송) 한 번만 반영돼요. 키마다 최근 16개를 기억해요.
+- 데이터는 `dusk-data/mem/`에 키마다 파일 하나로 있어요. 하루 첫 쓰기 전에 `dusk-data/snapshots/<날짜>/`에 통째로 복사해 두고 7일치만 남겨요.
+- `store.cjs`는 `cellar-start.cjs`와 같은 폴더에 있어야 해요.
 
 ## 보안
 

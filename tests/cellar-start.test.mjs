@@ -68,3 +68,46 @@ test("--require-token이면 같은 기기여도 토큰이 있어야 한다", asy
     assert.equal((await health(p, token)).auth, true);
   } finally { ch.kill("SIGTERM"); await exited(ch); }
 });
+
+test("기억 저장소 주소: 쓰기·읽기·목록·충돌·재전송·삭제, 재시작 뒤에도 남는다", async () => {
+  const root = fakeRisu(), p = port();
+  const data = path.join(root, "dusk-data");
+  const run = () => spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", data], { stdio: "ignore" });
+  const base = `http://127.0.0.1:${p}/cellar/mem`;
+  const call = async (method, url, body) => {
+    const r = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    return { status: r.status, json: await r.json() };
+  };
+  const K = "dusk.mem.v3.f.bot_chat";
+  let ch = run();
+  try {
+    const h = await health(p);
+    assert.deepEqual(h.features, ["mem"]);
+    assert.equal((await call("GET", `${base}/${K}`)).status, 404);
+    const w1 = await call("PUT", `${base}/${K}`, { value: '{"n":1}', baseRev: 0, opId: "a1" });
+    assert.equal(w1.json.rev, 1);
+    assert.equal((await call("PUT", `${base}/${K}`, { value: '{"n":1}', baseRev: 0, opId: "a1" })).json.duplicate, true, "재전송은 한 번만");
+    const bad = await call("PUT", `${base}/${K}`, { value: "x", baseRev: 0 });
+    assert.equal(bad.status, 409); assert.equal(bad.json.conflict, true); assert.equal(bad.json.rev, 1);
+    assert.equal((await call("GET", `${base}/${K}`)).json.value, '{"n":1}');
+    const b = await call("POST", `${base}/batch`, { ops: [{ op: "put", key: "dusk.mem.v3.index", value: "idx", baseRev: 0 }, { op: "put", key: K, value: "no", baseRev: 0 }] });
+    assert.equal(b.json.results[0].ok, true); assert.equal(b.json.results[1].conflict, true);
+    assert.deepEqual((await call("GET", `${base}?prefix=dusk.mem.v3.f.`)).json.items.map((x) => x.key), [K]);
+    assert.equal((await call("PUT", `${base}/bad%20key`, { value: "x" })).status, 400);
+    assert.equal((await call("POST", `${base}/batch`, { ops: "no" })).status, 400);
+    ch.kill("SIGTERM"); await exited(ch);
+    ch = run(); await health(p);
+    assert.equal((await call("GET", `${base}/${K}`)).json.rev, 1, "다시 켜도 그대로");
+    assert.equal((await call("DELETE", `${base}/${K}?baseRev=1`)).json.deleted, true);
+    assert.equal((await call("GET", `${base}/${K}`)).status, 404);
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
+});
+
+test("--require-token이면 기억 저장소도 토큰 없이는 401", async () => {
+  const root = fakeRisu(), p = port();
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d"), "--require-token"], { stdio: "ignore" });
+  try {
+    await health(p);
+    assert.equal((await fetch(`http://127.0.0.1:${p}/cellar/mem`)).status, 401);
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
+});
