@@ -68,3 +68,4 @@
 ## 플러그인 수정 3호스트 (2026-11-03)
 - `risusave.cjs`(RISUSAVE 블록에서 plugins 블록만 교체, 옛 형식은 호스트 msgpackr·fflate), `plugins.cjs`가 호스트별 load/write/verify. risuai: 파일 + 쓴 뒤 재확인(`overwritten`), pocketrisu: /api/read·/api/write(x-if-match). 스냅샷은 database.bin 대신 plugins.json.gz.
 - 시험: tests/plugins-hosts.test.js (Cellar 80 통과). **미확인**: 진짜 PocketRisu·리스AI 서버, 옛 형식은 가짜 코덱으로만 시험(진짜 msgpackr 없음), PocketRisu 쓰기 뒤 브라우저 쪽 동작, 블록 형식이 아닌 세이브.
+- Cellar→리스 호출은 설정한 주소가 안 되면 PORT·7777·6001을 시도하고 성공한 주소를 기억. 실패 메시지에 시도한 주소와 원인 코드(ECONNREFUSED 등)를 담음.

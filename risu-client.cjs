@@ -6,15 +6,28 @@ const crypto = require("node:crypto");
 
 const fail = (status, message, extra) => Object.assign(new Error(message), { status, ...(extra ? { extra } : {}) });
 
-function createRisuClient({ saveDir, risuUrl, fetchImpl = globalThis.fetch }) {
+function createRisuClient({ saveDir, risuUrl, fetchImpl = globalThis.fetch, altUrls = [] }) {
+  // 설정한 주소로 연결이 안 되면(연결 거부 등) 같은 PC의 흔한 포트(PORT 환경변수·7777·6001)도 한 번씩 시도하고, 되는 주소를 기억한다
+  let base = risuUrl;
+  const candidates = () => [...new Set([base, risuUrl, ...altUrls])];
+  const why = (e) => e.name === "AbortError" ? "응답이 없어요" : `${e.message}${e.cause?.code ? ` (${e.cause.code})` : e.cause?.message ? ` (${e.cause.message})` : ""}`;
   async function risu(method, p, { body, headers, timeout = 20000, raw, bin } = {}) {
-    const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), timeout);
-    try {
-      const res = await fetchImpl(risuUrl + p, { method, headers: { ...(bin || (raw instanceof Uint8Array) ? {} : { "content-type": "application/json" }), ...headers }, body: raw ?? (body === undefined ? undefined : JSON.stringify(body)), signal: ctrl.signal });
-      if (bin) return { status: res.status, json: null, buf: Buffer.from(await res.arrayBuffer()), headers: res.headers };
-      let json = null; try { json = await res.json(); } catch { /* JSON 아님 */ }
-      return { status: res.status, json };
-    } catch (e) { throw fail(424, `리스 서버에 연결하지 못했어요(${risuUrl}): ${e.name === "AbortError" ? "응답이 없어요" : e.message}`); } finally { clearTimeout(t); }
+    let lastErr;
+    for (const url of candidates()) {
+      const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), timeout);
+      try {
+        const res = await fetchImpl(url + p, { method, headers: { ...(bin || (raw instanceof Uint8Array) ? {} : { "content-type": "application/json" }), ...headers }, body: raw ?? (body === undefined ? undefined : JSON.stringify(body)), signal: ctrl.signal });
+        base = url;
+        if (bin) return { status: res.status, json: null, buf: Buffer.from(await res.arrayBuffer()), headers: res.headers };
+        let json = null; try { json = await res.json(); } catch { /* JSON 아님 */ }
+        return { status: res.status, json };
+      } catch (e) {
+        lastErr = { url, e };
+        if (e.name === "AbortError") break;      // 응답이 느린 것이지 주소가 틀린 게 아니다
+      } finally { clearTimeout(t); }
+    }
+    const tried = candidates().join(", ");
+    throw fail(424, `리스 서버에 연결하지 못했어요(시도한 주소: ${tried}): ${why(lastErr.e)}. Cellar를 켤 때 리스의 포트를 --risu-port로 알려 주세요`);
   }
   async function connect() {
     let pw = ""; try { pw = fs.readFileSync(path.join(saveDir, "__password"), "utf8").trim(); } catch { /* 아래에서 */ }

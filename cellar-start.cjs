@@ -81,9 +81,10 @@ if (flag("--role-server")) {
   const backups = saveDir ? createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) || 5, log }) : null;
   // 플러그인 수정(plugins.cjs): 지금은 RisuBard만. 리스 서버 주소는 같은 기기의 --risu-port(기본: 리스와 같은 PORT 환경변수, 없으면 7777)
   const { createPlugins, detectHost } = require("./plugins.cjs");
-  const plugins = saveDir ? createPlugins({ dataDir, saveDir, hostDir: opt("--host-dir", ""), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
+  const altUrls = () => [...new Set([process.env.PORT, "7777", "6001"].filter(Boolean))].map((p) => `http://127.0.0.1:${p}`);
+  const plugins = saveDir ? createPlugins({ dataDir, saveDir, hostDir: opt("--host-dir", ""), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, altUrls: altUrls(), log }) : null;
   const { createAssets } = require("./assets.cjs");
-  const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
+  const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, altUrls: altUrls(), log }) : null;
   const { createUpdate } = require("./update.cjs");
   const updater = createUpdate({ root: __dirname, dataDir, log });
   const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : [])];

@@ -264,3 +264,16 @@ test("replaceAll: 머리말 이름이 다른 옛 플러그인도 그대로 복�
     await assert.rejects(p.mutate({ expectListSha: (await p.list()).listSha, ops: [{ op: "replaceAll", plugins: [{ name: "x" }] }] }), (e) => e.status === 400);
   });
 });
+
+test("설정한 리스 주소로 연결이 안 되면 다른 흔한 포트로 시도하고, 끝내 안 되면 시도한 주소를 알려 준다", async (t) => {
+  const { setup, fakeRisubard, plugin } = require("./helpers/fakerisubard.cjs");
+  const s = setup({ plugins: [plugin("a")] });
+  const fr = await fakeRisubard(s.saveDir); t.after(() => fr.close());
+  const p = createPlugins({ saveDir: s.saveDir, dataDir: tmp(), risuUrl: "http://127.0.0.1:1", altUrls: [fr.url], log: () => {} });
+  const g = await p.get({ name: "a" });
+  const r = await p.apply({ edits: [{ name: "a", expectSha: g.sha256, script: g.script + "//x\n" }] });
+  assert.equal(r.adopted, true);
+  const bad = createPlugins({ saveDir: s.saveDir, dataDir: tmp(), risuUrl: "http://127.0.0.1:1", altUrls: ["http://127.0.0.1:2"], log: () => {} });
+  const g2 = await bad.get({ name: "a" });
+  await assert.rejects(bad.apply({ edits: [{ name: "a", expectSha: g2.sha256, script: g2.script + "//y\n" }] }), (e) => e.status === 424 && /시도한 주소: http:\/\/127\.0\.0\.1:1, http:\/\/127\.0\.0\.1:2/.test(e.message));
+});

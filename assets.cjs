@@ -12,8 +12,8 @@ const KEY = /^assets\/([a-f0-9]{64})\.([a-z0-9]{1,16})$/;
 const MAX_KEYS = 5000, MAX_PUT = 200, BATCH_BYTES = 24 * 1024 * 1024, BATCH_COUNT = 50;
 const hexName = (key) => Buffer.from(key, "utf8").toString("hex");
 
-function createAssets({ saveDir, host, risuUrl, log = () => {}, fetchImpl = globalThis.fetch }) {
-  const client = createRisuClient({ saveDir, risuUrl, fetchImpl });
+function createAssets({ saveDir, host, risuUrl, altUrls, log = () => {}, fetchImpl = globalThis.fetch }) {
+  const client = createRisuClient({ saveDir, risuUrl, fetchImpl, altUrls });
   const sink = host === "risuai" ? "direct" : host === "risubard" || host === "pocketrisu" ? "bulk" : null;
   let tail = Promise.resolve();
   const serial = (fn) => { const r = tail.then(fn, fn); tail = r.catch(() => {}); return r; };

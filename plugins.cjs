@@ -57,7 +57,7 @@ function serialize(obj, original) {
   return /\r?\n$/.test(original) ? out + eol : out;
 }
 
-function createPlugins({ saveDir, dataDir, risuUrl, hostDir, codecLib, verifyMs = 3000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {}, fetchImpl = globalThis.fetch, now = () => new Date() }) {
+function createPlugins({ saveDir, dataDir, risuUrl, altUrls, hostDir, codecLib, verifyMs = 3000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {}, fetchImpl = globalThis.fetch, now = () => new Date() }) {
   const codec = createCodec({ hostDir, lib: codecLib });
   const DB_NAME = Buffer.from("database/database.bin", "utf8").toString("hex");
   const snapRoot = path.join(dataDir, "plugin-backups");
@@ -188,7 +188,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, hostDir, codecLib, verifyMs 
   }
 
   // ── 리스(RisuBard) 호출 ──
-  const client = createRisuClient({ saveDir, risuUrl, fetchImpl });
+  const client = createRisuClient({ saveDir, risuUrl, fetchImpl, altUrls });
   const risu = client.risu;
   async function connect() {
     const c = await client.connect();
