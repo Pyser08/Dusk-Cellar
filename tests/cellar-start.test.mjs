@@ -82,7 +82,7 @@ test("기억 저장소 주소: 쓰기·읽기·목록·충돌·재전송·삭제
   let ch = run();
   try {
     const h = await health(p);
-    assert.deepEqual(h.features, ["mem"]);
+    assert.deepEqual(h.features, ["mem", "backup"]);
     assert.equal((await call("GET", `${base}/${K}`)).status, 404);
     const w1 = await call("PUT", `${base}/${K}`, { value: '{"n":1}', baseRev: 0, opId: "a1" });
     assert.equal(w1.json.rev, 1);
@@ -112,5 +112,41 @@ test("--require-token이면 기억 저장소도 토큰 없이는 401", async () 
   try {
     await health(p);
     assert.equal((await fetch(`http://127.0.0.1:${p}/cellar/mem`)).status, 401);
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
+});
+
+test("백업·복원(HTTP): 리스를 멈췄다가 세이브를 되돌리고 다시 켠다", async () => {
+  const root = fakeRisu(), p = port();
+  // 가짜 리스: 켜질 때마다 starts.txt에 한 줄, save/database.bin을 읽어 boot.txt에 남김
+  fs.writeFileSync(path.join(root, "server", "node", "server.cjs"),
+    `const fs=require("fs");fs.appendFileSync("starts.txt","x");try{fs.writeFileSync("boot.txt",fs.readFileSync("save/database.bin","utf8"))}catch{}
+     process.on("SIGTERM",()=>process.exit(0));setInterval(()=>{},1000);`);
+  fs.mkdirSync(path.join(root, "save"), { recursive: true });
+  fs.writeFileSync(path.join(root, "save", "database.bin"), "good");
+  const data = path.join(root, "dusk-data");
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", data], { stdio: "ignore" });
+  const api = `http://127.0.0.1:${p}/cellar/backup`;
+  const post = async (b) => (await fetch(api, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) })).json();
+  try {
+    const h = await health(p);
+    assert.deepEqual(h.features, ["mem", "backup"]);
+    assert.equal((await post({ action: "create", label: "수동" })).ok, true);
+    let list;
+    for (let i = 0; i < 50; i++) { list = await (await fetch(api)).json(); if (list.job?.finishedAt) break; await sleep(100); }
+    assert.equal(list.job.error, ""); assert.equal(list.items.length, 1);
+    const id = list.items[0].id;
+    fs.writeFileSync(path.join(root, "save", "database.bin"), "broken");
+    fs.writeFileSync(path.join(root, "save", "extra.bin"), "x");
+    assert.equal((await post({ action: "restore", id })).restarting, true);
+    // 리스가 다시 켜질 때까지
+    for (let i = 0; i < 80 && fs.readFileSync(path.join(root, "starts.txt"), "utf8").length < 2; i++) await sleep(100);
+    assert.equal(fs.readFileSync(path.join(root, "starts.txt"), "utf8"), "xx", "리스가 한 번 다시 켜짐");
+    assert.equal(fs.readFileSync(path.join(root, "boot.txt"), "utf8"), "good", "다시 켜질 때는 이미 복원된 세이브");
+    assert.equal(fs.existsSync(path.join(root, "save", "extra.bin")), false);
+    const after = await health(p);
+    assert.equal(after.ok, true, "Cellar도 다시 켜짐");
+    const items = (await (await fetch(api)).json()).items;
+    assert.equal(items.length, 2); assert.equal(items[0].label, "복원 전 자동");
+    assert.equal(ch.exitCode, null, "실행기는 계속 돈다");
   } finally { ch.kill("SIGTERM"); await exited(ch); }
 });

@@ -16,7 +16,8 @@
 //   · Ctrl+C·종료 신호는 둘 다에게 전한다.
 //   · Node 기본 기능만 쓴다(npm install 불필요). 리스 파일은 읽지도 고치지도 않는다.
 //   · Dusk 데이터는 이 파일 옆 dusk-data/ 에만 쓴다.
-//   · 기억 저장소 코드는 같은 폴더의 store.cjs(함께 있어야 한다).
+//   · 기억 저장소 코드는 같은 폴더의 store.cjs, 백업은 backup.cjs(함께 있어야 한다).
+//   · 백업 대상: 리스 세이브 폴더(기본 <리스>/save, --save-dir) + dusk-data/mem. 보관 개수 --keep(기본 5).
 "use strict";
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -72,6 +73,10 @@ if (flag("--role-server")) {
   };
   const { createStore, MAX_VALUE } = require("./store.cjs");
   const mem = createStore({ dir: dataDir, log });
+  // 백업(backup.cjs): 리스 세이브 폴더 + Cellar 기억. 복원은 리스를 멈춰야 하므로 실행기(부모)에게 맡긴다.
+  const saveDir = opt("--save-dir", "");
+  const { createBackups } = require("./backup.cjs");
+  const backups = saveDir ? createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) || 5, log }) : null;
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
   const readJson = (req) => new Promise((resolve, reject) => {
     const limit = MAX_VALUE + 64 * 1024;
@@ -85,7 +90,7 @@ if (flag("--role-server")) {
       const url = new URL(req.url, "http://x");
       if (req.method === "OPTIONS") return send(res, 204, {});
       // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음). features: 이 서버가 지원하는 기능
-      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: ["mem"] });
+      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: backups ? ["mem", "backup"] : ["mem"] });
       if (!authed(req)) return send(res, 401, { ok: false, error: "토큰이 없거나 달라요" });
 
       // 기억 저장소(store.cjs). 쓰기는 모두 POST /cellar/mem/batch로도 보낼 수 있다(프록시가 PUT·DELETE를 막을 때 대비)
@@ -102,6 +107,26 @@ if (flag("--role-server")) {
         }
         if (req.method === "PUT") { const b = await readJson(req); return send(res, 200, mem.put(key, b.value, b)); }
         if (req.method === "DELETE") return send(res, 200, mem.del(key, { baseRev: url.searchParams.get("baseRev") ?? undefined }));
+      }
+      if (url.pathname === "/cellar/backup") {
+        if (!backups) return send(res, 404, { ok: false, error: "세이브 폴더를 몰라서 백업을 쓸 수 없어요(--save-dir)" });
+        if (req.method === "GET") return send(res, 200, { ok: true, items: backups.list(), job: backups.status() });
+        if (req.method === "POST") {
+          const b = await readJson(req);
+          if (b.action === "create") return send(res, 200, { ok: true, job: backups.startCreate({ label: String(b.label ?? "").slice(0, 40) }) });
+          if (b.action === "delete") return send(res, 200, await backups.remove(b.id));
+          if (b.action === "restore") {
+            if (typeof process.send !== "function") return send(res, 409, { ok: false, error: "실행기 없이 켜져 있어서 복원할 수 없어요" });
+            if (!backups.has(String(b.id))) return send(res, 404, { ok: false, error: "없는 백업이에요" });
+            const j = backups.status();
+            if (j && !j.finishedAt) return send(res, 409, { ok: false, error: "백업이 끝난 뒤에 복원해 주세요" });
+            send(res, 200, { ok: true, restarting: true });
+            // 응답이 나간 뒤에 실행기에게 부탁한다(리스·Cellar를 멈추고 복원한 뒤 다시 켬)
+            setTimeout(() => process.send({ type: "restore", id: String(b.id) }), 300);
+            return;
+          }
+          return send(res, 400, { ok: false, error: "action은 create·restore·delete예요" });
+        }
       }
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {
@@ -142,19 +167,61 @@ if (!entry) {
 // 리스 폴더 = server/node/server.cjs 의 두 단계 위 (리스가 기대하는 작업 폴더)
 const risuRoot = path.basename(path.dirname(entry)) === "node" && path.basename(path.dirname(path.dirname(entry))) === "server" ? path.dirname(path.dirname(path.dirname(entry))) : path.dirname(entry);
 
-let stopping = false;
+const dataDir = opt("--data-dir", path.join(__dirname, "dusk-data"));
+const saveDir = path.resolve(opt("--save-dir", path.join(risuRoot, "save")));
+let stopping = false, restoring = false;
 log(`리스 시작: ${path.relative(process.cwd(), entry) || entry}`);
-const risu = spawn(process.execPath, [...process.execArgv, entry, ...pass], { cwd: risuRoot, stdio: "inherit", env: process.env });
+let risu = null;
+function startRisu() {
+  risu = spawn(process.execPath, [...process.execArgv, entry, ...pass], { cwd: risuRoot, stdio: "inherit", env: process.env });
+  const me = risu;
+  me.on("exit", (code, sig) => {
+    if (restoring) return;   // 복원하려고 멈춘 것
+    stopping = true;
+    clearTimeout(restartTimer);
+    if (dusk) dusk.kill("SIGTERM");
+    log(`리스가 꺼졌어요(${sig ?? code}). Dusk Cellar도 끕니다.`);
+    setTimeout(() => process.exit(code ?? (sig ? 1 : 0)), 300);
+  });
+  me.on("error", (e) => { log("리스를 켜지 못했어요:", e.message); shutdown("SIGTERM"); process.exit(1); });
+}
+startRisu();
+const exitOf = (child) => new Promise((r) => { if (!child || child.exitCode !== null || child.signalCode !== null) return r(); child.once("exit", () => r()); });
+
+// 복원: 리스·Cellar를 멈추고 → 지금 상태를 자동 백업 → 고른 백업으로 맞춘 뒤 → 다시 켠다. 실패해도 리스는 다시 켠다.
+async function doRestore(id) {
+  if (restoring || stopping) return;
+  restoring = true;
+  log(`복원 시작: ${id} — 리스를 잠깐 멈춥니다`);
+  try {
+    clearTimeout(restartTimer);
+    const r = risu, d = dusk;
+    if (r && r.exitCode === null) r.kill("SIGTERM");
+    if (d) d.kill("SIGTERM");
+    await Promise.all([exitOf(r), exitOf(d)]);
+    const { createBackups } = require("./backup.cjs");
+    const b = createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) + 1 || 6, log });
+    await b.create({ label: "복원 전 자동" });
+    const res = await b.restore(id);
+    log(`복원 끝: 바꾼 파일 ${res.replaced}개, 지운 파일 ${res.removed}개`);
+  } catch (e) {
+    log("복원 실패 — 리스는 그대로 다시 켭니다:", e?.message ?? e);
+  } finally {
+    restoring = false;
+    if (!stopping) { startRisu(); fails = 0; startDusk(); }
+  }
+}
 
 let dusk = null, fails = 0, restartTimer = null;
 function startDusk() {
   if (stopping || flag("--no-dusk")) return;
-  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", opt("--data-dir", path.join(__dirname, "dusk-data"))];
+  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", dataDir, "--save-dir", saveDir, "--keep", opt("--keep", "5")];
   const t0 = Date.now();
   dusk = spawn(process.execPath, args, { stdio: ["ignore", "inherit", "inherit", "ipc"], env: process.env });
+  dusk.on("message", (m) => { if (m?.type === "restore" && typeof m.id === "string") doRestore(m.id); });
   dusk.on("exit", (code) => {
     dusk = null;
-    if (stopping) return;
+    if (stopping || restoring) return;
     if (code === 78) { log("Dusk Cellar를 켜지 못했어요(포트 사용 중). 리스는 그대로 돌아요."); return; }
     if (Date.now() - t0 > 60_000) fails = 0;   // 1분 넘게 잘 돌았으면 실패 횟수 초기화
     if (++fails > 5) { log("Dusk Cellar가 계속 꺼져서 다시 켜지 않아요. 리스는 그대로 돌아요."); return; }
@@ -170,15 +237,8 @@ function shutdown(sig) {
   stopping = true;
   clearTimeout(restartTimer);
   if (dusk) dusk.kill("SIGTERM");
-  if (risu.exitCode === null) risu.kill(sig);
+  if (risu && risu.exitCode === null) risu.kill(sig);
+  else if (restoring) setTimeout(() => process.exit(0), 300);
 }
 process.on("SIGINT", () => shutdown("SIGINT"));
 process.on("SIGTERM", () => shutdown("SIGTERM"));
-risu.on("exit", (code, sig) => {
-  stopping = true;
-  clearTimeout(restartTimer);
-  if (dusk) dusk.kill("SIGTERM");
-  log(`리스가 꺼졌어요(${sig ?? code}). Dusk Cellar도 끕니다.`);
-  setTimeout(() => process.exit(code ?? (sig ? 1 : 0)), 300);
-});
-risu.on("error", (e) => { log("리스를 켜지 못했어요:", e.message); shutdown("SIGTERM"); process.exit(1); });
