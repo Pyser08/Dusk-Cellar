@@ -16,7 +16,8 @@
 
 ## 진행
 - [x] 실행 구조, 설치기, README (2026-11-03, b48c204)
-- [ ] 실제 RisuAI·RisuBard 폴더 + 진짜 pm2 + 윈도우에서 설치 시험 (RisuBard 시작 파일 경로 확인)
+- [x] 실제 설치 시험: RisuBard(우분투 서버, ~/RisuBard/Dusk-Cellar, pm2) 5/5 통과, health 응답 확인 (2026-11-03). RisuBard 시작 파일 = server/node/server.cjs 자동 찾기 성공
+- [ ] 윈도우·맥·Termux, 원본 RisuAI 설치 시험
 - [ ] 플러그인 연결(주소·토큰 설정, 있으면 쓰고 없으면 지금 방식, RisuAI·RisuBard·PocketRisu 호환)
 - [ ] 1단계: 기억 백업 + 화면에 필요한 조각만 돌려주기, 속도 측정
 - [ ] (효과 있으면) 분석·임베딩 서버 실행
