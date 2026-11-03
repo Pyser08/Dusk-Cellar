@@ -92,7 +92,7 @@ test("전체 흐름(가짜 pm2·npm): 찾기 → 빌드 → 추천 항목 지우
   assert.deepEqual(calls.slice(0, 2), ["npm install", "npm run build"], r.stdout);
   assert.ok(calls.includes("pm2 delete 7"), r.stdout);
   const start = calls.find((l) => l.startsWith("pm2 start"));
-  assert.ok(start.includes(`${clone}/cellar-start.cjs --name risu --cwd ${risu} -- --risu ${risu}/server/node/server.cjs`), start);
+  assert.ok(start.includes(`${clone}/cellar-start.cjs --name risu --cwd ${risu} --kill-timeout 10000 -- --risu ${risu}/server/node/server.cjs`), start);
   assert.ok(calls.includes("pm2 save"));
 });
 

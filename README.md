@@ -155,3 +155,8 @@ Node 기본 모듈만 써요(`npm install` 불필요).
 | 순정 리스AI | `save/<hex>` 의 database.bin에서 `plugins` 블록만 바꿔 씀 | 쓴 뒤 `verifyMs`(3초) 뒤 다시 읽어 확인, 덮어쓰였으면 `overwritten:true` |
 
 옛 형식(raw·compressed) database.bin은 호스트의 msgpackr·fflate를 빌려 풀어요(`--host-dir`, 실행기가 넘겨 줌).
+
+## pm2로 켤 때 (종료 대기 시간)
+
+설치기(`setup.cjs`)는 `pm2 start … --kill-timeout 10000`으로 등록해요. pm2 기본값(1.6초)이면 리스가 저장을 마치기 전에 강제 종료될 수 있어서예요. 예전에 등록했다면 `pm2 restart <이름> --kill-timeout 10000` 뒤 `pm2 save`를 해 주세요.
+이전 Cellar가 포트를 붙잡고 남아 있어도(같은 데이터 폴더일 때) 새 Cellar가 스스로 끄고 이어받아요.

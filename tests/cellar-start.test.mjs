@@ -199,3 +199,33 @@ test("실행기와의 연결이 끊기면 Dusk Cellar 서버는 스스로 끝난
     assert.equal(code, 0);
   } finally { ch.kill("SIGKILL"); }
 });
+
+test("같은 데이터 폴더의 이전 Cellar가 포트를 잡고 있으면 끄고 이어받는다", async () => {
+  const root = fakeRisu(), p = port(), d = path.join(root, "d");
+  const run = () => spawn(process.execPath, [LAUNCHER, "--role-server", "--dusk-port", String(p), "--data-dir", d], { stdio: "ignore" });
+  const a = run();
+  try {
+    const h1 = await health(p);
+    const b = run();
+    try {
+      const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 6000); a.once("exit", (c, sig) => { clearTimeout(t); res(sig ?? c); }); });
+      assert.ok(code === "SIGTERM" || code === 0, String(code));
+      await new Promise((r) => setTimeout(r, 500));
+      const h2 = await health(p);
+      assert.notEqual(h2.pid, h1.pid);
+      assert.equal(h2.pid, b.pid);
+    } finally { b.kill("SIGKILL"); }
+  } finally { a.kill("SIGKILL"); }
+});
+
+test("다른 데이터 폴더의 Cellar가 잡은 포트는 건드리지 않고 78로 끝난다", async () => {
+  const root = fakeRisu(), p = port();
+  const a = spawn(process.execPath, [LAUNCHER, "--role-server", "--dusk-port", String(p), "--data-dir", path.join(root, "d1")], { stdio: "ignore" });
+  try {
+    await health(p);
+    const b = spawn(process.execPath, [LAUNCHER, "--role-server", "--dusk-port", String(p), "--data-dir", path.join(root, "d2")], { stdio: "ignore" });
+    const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 6000); b.once("exit", (c) => { clearTimeout(t); res(c); }); });
+    assert.equal(code, 78);
+    assert.equal((await health(p)).pid, a.pid);
+  } finally { a.kill("SIGKILL"); }
+});

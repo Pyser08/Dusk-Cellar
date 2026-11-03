@@ -219,7 +219,7 @@ async function waitHealth(port, ms = 20000) {
   step(4, "리스 + Dusk Cellar 함께 실행");
   if (usePm2) {
     const name = pickName(opt("--name", "risu"), rows, del);
-    const code = run("pm2", ["start", launcher, "--name", name, "--cwd", root, "--", "--risu", entry, "--dusk-port", port, "--data-dir", dataDir]);
+    const code = run("pm2", ["start", launcher, "--name", name, "--cwd", root, "--kill-timeout", "10000", "--", "--risu", entry, "--dusk-port", port, "--data-dir", dataDir]);
     if (code !== 0) { say("  pm2 등록에 실패했어요."); process.exit(code); }
     run("pm2", ["save"]);
     say(`  pm2 이름: ${name}  (끄기: pm2 stop ${name} · 로그: pm2 logs ${name})`);

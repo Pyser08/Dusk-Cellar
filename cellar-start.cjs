@@ -46,6 +46,7 @@ if (flag("--role-server")) {
   const host = opt("--dusk-host", "127.0.0.1");
   const dataDir = path.resolve(opt("--data-dir", path.join(__dirname, "dusk-data")));
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
+  const dataId = crypto.createHash("sha256").update(dataDir).digest("hex").slice(0, 12);   // 같은 설치(데이터 폴더)인지 구분
   const tokenFile = path.join(dataDir, "token.txt");
   let token;
   try { token = fs.readFileSync(tokenFile, "utf8").trim(); } catch { /* 처음 */ }
@@ -105,7 +106,7 @@ if (flag("--role-server")) {
       const url = new URL(req.url, "http://x");
       if (req.method === "OPTIONS") return send(res, 204, {});
       // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음). features: 이 서버가 지원하는 기능
-      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: features() });
+      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: features(), pid: process.pid, dataId });
       if (!authed(req)) return send(res, 401, { ok: false, error: "토큰이 없거나 달라요" });
 
       // 기억 저장소(store.cjs). 쓰기는 모두 POST /cellar/mem/batch로도 보낼 수 있다(프록시가 PUT·DELETE를 막을 때 대비)
@@ -186,11 +187,26 @@ if (flag("--role-server")) {
       send(res, e.status ?? 500, { ok: false, error: String(e?.message ?? e), ...extra });
     }
   });
-  server.on("error", (e) => {
+  let tookOver = false;
+  server.on("error", async (e) => {
+    if (e.code === "EADDRINUSE" && !tookOver) {
+      tookOver = true;
+      // 같은 설치(데이터 폴더)의 이전 Dusk Cellar가 고아로 남아 포트를 잡고 있으면 끄고 이어받는다(pm2가 실행기만 죽였을 때 등)
+      try {
+        const j = await (await fetch(`http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}/cellar/health`, { signal: AbortSignal.timeout(2000) })).json();
+        if (j?.name === "dusk-cellar" && j.dataId === dataId && Number.isInteger(j.pid) && j.pid !== process.pid) {
+          log(`같은 데이터 폴더를 쓰는 이전 Dusk Cellar(pid ${j.pid})가 남아 있어서 끄고 이어받아요`);
+          process.kill(j.pid, "SIGTERM");
+          for (let i = 0; i < 25; i++) { await new Promise((r) => setTimeout(r, 200)); try { process.kill(j.pid, 0); } catch { break; } }
+          return server.listen(port, host, onUp);
+        }
+      } catch { /* 아래에서 안내 */ }
+    }
     if (e.code === "EADDRINUSE") { log(`포트 ${port}를 이미 쓰고 있어요. 이전 Dusk Cellar가 남아 있을 수 있어요(ss -ltnp | grep ${port} 로 찾아 kill). 아니면 --dusk-port로 다른 번호를 주세요.`); process.exit(78); }
     log("서버 오류:", e.message); process.exit(1);
   });
-  server.listen(port, host, () => log(`Dusk Cellar v${VERSION} — http://${host}:${port}/cellar/health`));
+  const onUp = () => log(`Dusk Cellar v${VERSION} — http://${host}:${port}/cellar/health`);
+  server.listen(port, host, onUp);
   const stop = () => server.close(() => process.exit(0));
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
