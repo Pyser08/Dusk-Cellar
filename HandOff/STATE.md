@@ -64,3 +64,7 @@
 ## 자체 업데이트 (2026-11-03)
 - `update.cjs` + `POST /cellar/update`(check/apply/rollback), 실행기 IPC `restart`(Cellar만 즉시 재시작, 실패 횟수 초기화). features에 "update". 시험: tests/update.test.js(실제 git 저장소 사용). Cellar 71 통과. 서버 실물(pm2) 확인은 아직.
 - 플러그인 수정/관리 응답에 `timing`(plan·login·check·snapshot·write·detect·accept·final·total, ms)을 넣고 로그에도 남김 — 느림 원인 측정용.
+
+## 플러그인 수정 3호스트 (2026-11-03)
+- `risusave.cjs`(RISUSAVE 블록에서 plugins 블록만 교체, 옛 형식은 호스트 msgpackr·fflate), `plugins.cjs`가 호스트별 load/write/verify. risuai: 파일 + 쓴 뒤 재확인(`overwritten`), pocketrisu: /api/read·/api/write(x-if-match). 스냅샷은 database.bin 대신 plugins.json.gz.
+- 시험: tests/plugins-hosts.test.js (Cellar 80 통과). **미확인**: 진짜 PocketRisu·리스AI 서버, 옛 형식은 가짜 코덱으로만 시험(진짜 msgpackr 없음), PocketRisu 쓰기 뒤 브라우저 쪽 동작, 블록 형식이 아닌 세이브.

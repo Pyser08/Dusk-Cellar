@@ -177,15 +177,14 @@ test("/cellar/plugins: 기능 표시 + list·get·apply·충돌 응답이 실행
   } finally { ch.kill("SIGTERM"); await exited(ch); await risu.close(); }
 });
 
-test("세이브 폴더가 RisuBard가 아니면 plugins 기능을 알리지 않고, 쓰려 하면 501", async () => {
+test("세이브 폴더를 알아볼 수 없으면 plugins 기능을 알리지 않고, 쓰려 하면 501", async () => {
   const root = fakeRisu(), p = port(), save = fs.mkdtempSync(path.join(os.tmpdir(), "save-"));
-  fs.writeFileSync(path.join(save, "risuai.db"), "");
   const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d"), "--save-dir", save], { stdio: "ignore" });
   try {
     const h = await health(p);
     assert.ok(!h.features.includes("plugins"));
     const r = await fetch(`http://127.0.0.1:${p}/cellar/plugins`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "list" }) });
     const j = await r.json();
-    assert.equal(r.status, 501); assert.equal(j.host, "pocketrisu");
+    assert.equal(r.status, 501); assert.equal(j.host, "unknown");
   } finally { ch.kill("SIGTERM"); await exited(ch); }
 });

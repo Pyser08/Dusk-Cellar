@@ -175,10 +175,10 @@ test("스냅샷은 20개까지만 남긴다", async (t) => {
   assert.equal(fs.readdirSync(path.join(dataDir, "plugin-backups")).length, 20);
 });
 
-test("RisuBard가 아닌 호스트는 아직 지원하지 않는다(501)", async () => {
-  const dir = tmp(); fs.writeFileSync(path.join(dir, "risuai.db"), "");
+test("알 수 없는 호스트는 지원하지 않는다(501)", async () => {
+  const dir = tmp();
   const p = createPlugins({ saveDir: dir, dataDir: tmp(), risuUrl: "http://127.0.0.1:1", log: () => {} });
-  await assert.rejects(p.list(), (e) => e.status === 501 && e.extra?.host === "pocketrisu");
+  await assert.rejects(p.list(), (e) => e.status === 501 && e.extra?.host === "unknown");
   await assert.rejects(p.apply({ edits: [{ name: "a", expectSha: sha("x"), script: "x" }] }), (e) => e.status === 501);
 });
 

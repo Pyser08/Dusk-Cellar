@@ -19,6 +19,7 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const { createRisuClient } = require("./risu-client.cjs");
+const { createCodec } = require("./risusave.cjs");
 
 const MAX_EDITS = 20;           // 한 번에 고칠 수 있는 플러그인 수
 const MAX_SCRIPT = 12 * 1024 * 1024;
@@ -56,24 +57,43 @@ function serialize(obj, original) {
   return /\r?\n$/.test(original) ? out + eol : out;
 }
 
-function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = globalThis.fetch, now = () => new Date() }) {
+function createPlugins({ saveDir, dataDir, risuUrl, hostDir, codecLib, verifyMs = 3000, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), log = () => {}, fetchImpl = globalThis.fetch, now = () => new Date() }) {
+  const codec = createCodec({ hostDir, lib: codecLib });
+  const DB_NAME = Buffer.from("database/database.bin", "utf8").toString("hex");
   const snapRoot = path.join(dataDir, "plugin-backups");
   let seq = 0, tail = Promise.resolve();
   const serial = (fn) => { const run = tail.then(fn); tail = run.catch(() => {}); return run; };
 
-  const need = () => { const host = detectHost(saveDir); if (host !== "risubard") throw fail(501, host === "unknown" ? "세이브 폴더를 알아볼 수 없어서 플러그인을 고칠 수 없어요" : "이 호스트는 아직 플러그인 수정을 지원하지 않아요(지금은 RisuBard만)", { host }); return host; };
+  const HOSTS = ["risubard", "risuai", "pocketrisu"];
+  const need = () => { const host = detectHost(saveDir); if (!HOSTS.includes(host)) throw fail(501, "세이브 폴더를 알아볼 수 없어서 플러그인을 고칠 수 없어요", { host }); return host; };
 
   // plugins가 들어 있는 파일(settings 또는 secrets)을 찾는다
-  function load() {
+  function loadRisubard() {
     const found = [];
     for (const [where, rel] of [["settings", SETTINGS], ["secrets", SECRETS]]) {
       const file = path.join(saveDir, rel);
       let text; try { text = fs.readFileSync(file, "utf8"); } catch (e) { if (e.code === "ENOENT") continue; throw fail(500, `${rel}을 읽지 못했어요: ${e.message}`); }
       let obj; try { obj = JSON.parse(text); } catch { throw fail(500, `${rel}이 올바른 JSON이 아니에요`); }
-      if (obj && typeof obj === "object" && Array.isArray(obj.plugins)) found.push({ where, rel, file, text, obj });
+      if (obj && typeof obj === "object" && Array.isArray(obj.plugins)) found.push({ where, rel, file, text, obj, plugins: obj.plugins, encode: (pl) => serialize({ ...obj, plugins: pl }, text) });
     }
     if (found.length > 1) throw fail(409, "plugins가 두 파일에 모두 있어서 안전하게 고칠 수 없어요");
     return found[0] ?? null;
+  }
+  // 호스트별로 플러그인이 든 곳을 읽는다. 반환 f: { where, rel, plugins, encode(plugins) → 저장할 내용, file?, etag? }
+  async function load(conn) {
+    const host = need();
+    if (host === "risubard") return loadRisubard();
+    if (host === "risuai") {
+      const file = path.join(saveDir, DB_NAME);
+      let buf; try { buf = fs.readFileSync(file); } catch (e) { throw fail(e.code === "ENOENT" ? 404 : 500, e.code === "ENOENT" ? "database.bin이 아직 없어요(리스에서 한 번 저장된 뒤 다시 해 주세요)" : `database.bin을 읽지 못했어요: ${e.message}`); }
+      const o = codec.open(buf);
+      return { where: "database", rel: DB_NAME, file, buf, format: o.format, plugins: o.plugins, encode: o.encode };
+    }
+    conn ??= await client.connect();
+    const r = await client.risu("GET", "/api/read", { headers: { ...conn.headers(), "file-path": DB_NAME }, bin: true, timeout: 120000 });
+    if (r.status !== 200 || !r.buf?.length) throw fail(424, `리스에서 database.bin을 읽지 못했어요(응답 ${r.status})`);
+    const o = codec.open(r.buf);
+    return { where: "database", rel: "database/database.bin", etag: r.headers.get("x-db-etag") ?? null, buf: r.buf, format: o.format, plugins: o.plugins, encode: o.encode };
   }
   const summary = (p, index) => ({
     index, name: String(p?.name ?? ""), displayName: p?.displayName ? String(p.displayName) : undefined, version: p?.version ?? null,
@@ -84,8 +104,8 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
 
   async function list() {
     const host = need();
-    const f = load();
-    return { ok: true, host, location: f?.where ?? "settings", listSha: f ? sha256(JSON.stringify(f.obj.plugins)) : "", plugins: (f?.obj.plugins ?? []).map(summary) };
+    const f = await load();
+    return { ok: true, host, location: f?.where ?? "settings", listSha: f ? sha256(JSON.stringify(f.plugins)) : "", plugins: (f?.plugins ?? []).map(summary) };
   }
   function pick(plugins, { name, index }) {
     const hits = plugins.map((p, i) => [p, i]).filter(([p, i]) => p?.name === name && (index === undefined || i === index));
@@ -95,8 +115,8 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
   }
   async function get({ name, index, gzip }) {
     need();
-    const f = load();
-    const [p, i] = pick(f?.obj.plugins ?? [], { name: String(name ?? ""), index: Number.isInteger(index) ? index : undefined });
+    const f = await load();
+    const [p, i] = pick(f?.plugins ?? [], { name: String(name ?? ""), index: Number.isInteger(index) ? index : undefined });
     const script = String(p.script ?? "");
     // gzip: 리스 프록시는 응답을 조각조각 넘겨서 큰 코드(수 MB)는 오래 걸린다 → 압축해서(코드는 5~10배 줄어든다) 보내면 빨라진다
     if (gzip) return { ok: true, name: p.name, index: i, scriptZ: zlib.gzipSync(Buffer.from(script, "utf8")).toString("base64"), sha256: sha256(script) };
@@ -129,10 +149,10 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     });
   }
   // 지금 파일 기준으로 고칠 위치·해시·머리말을 확인하고 새 파일 내용을 만든다
-  function plan(edits) {
-    const f = load();
+  async function plan(edits, conn) {
+    const f = await load(conn);
     if (!f) throw fail(404, "설치된 플러그인 목록을 찾지 못했어요");
-    const plugins = f.obj.plugins.map((p) => ({ ...p }));
+    const plugins = f.plugins.map((p) => ({ ...p }));
     const results = [];
     for (const e of edits) {
       const [p, i] = pick(plugins, e);
@@ -143,21 +163,26 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
       plugins[i] = { ...p, script: e.script };
       results.push({ name: p.name, index: i, oldSha: cur, newSha: sha256(e.script), bytes: Buffer.byteLength(e.script) });
     }
-    const next = { ...f.obj, plugins };
-    return { f, results, text: serialize(next, f.text) };
+    return { f, results, text: f.encode(plugins), plugins };
   }
 
   // 고치기 전 그 파일(과 사이드카)을 복사해 둔다. 20개까지만 남긴다.
-  function snapshot(f, results) {
+  function snapshot(f, results, host) {
     const d = now();
     const stamp = d.toISOString().replace(/[-:T]/g, "").replace(/\..*$/, "") + String(d.getMilliseconds()).padStart(3, "0");
     const id = `${stamp}-${(seq++).toString(36).padStart(3, "0")}`;
     const dir = path.join(snapRoot, id);
-    const dest = path.join(dir, f.rel);
-    fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
-    fs.copyFileSync(f.file, dest);
-    if (fs.existsSync(f.file + ".sha256")) fs.copyFileSync(f.file + ".sha256", dest + ".sha256");
-    fs.writeFileSync(path.join(dir, "meta.json"), JSON.stringify({ at: d.toISOString(), host: "risubard", file: f.rel, edits: results }, null, 2));
+    fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+    if (host === "risubard") {
+      const dest = path.join(dir, f.rel);
+      fs.mkdirSync(path.dirname(dest), { recursive: true, mode: 0o700 });
+      fs.copyFileSync(f.file, dest);
+      if (fs.existsSync(f.file + ".sha256")) fs.copyFileSync(f.file + ".sha256", dest + ".sha256");
+    } else {
+      // database.bin은 크니까 통째로 복사하지 않고 플러그인 목록만 gzip으로 남긴다
+      fs.writeFileSync(path.join(dir, "plugins.json.gz"), zlib.gzipSync(Buffer.from(JSON.stringify(f.plugins), "utf8")));
+    }
+    fs.writeFileSync(path.join(dir, "meta.json"), JSON.stringify({ at: d.toISOString(), host, file: f.rel, edits: results }, null, 2));
     try { for (const old of fs.readdirSync(snapRoot).sort().slice(0, -SNAP_KEEP)) fs.rmSync(path.join(snapRoot, old), { recursive: true, force: true }); } catch { /* 정리 실패는 무시 */ }
     return id;
   }
@@ -174,27 +199,52 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     };
   }
 
-  // 파일을 고치는 공통 흐름: planFn()은 지금 파일 기준으로 { f, results, text }를 만든다(두 번 불린다: 리스를 부르기 전·쓰기 직전)
+  // 고치는 공통 흐름: planFn(conn)은 지금 상태 기준으로 { f, results, text }를 만든다.
+  //   risubard: 파일을 쓰고 리스의 '외부 변경 검토'에서 받아들이게 한다. risuai: 파일을 바꿔 쓴 뒤 브라우저가 덮어쓰지 않았는지 다시 읽어 확인한다.
+  //   pocketrisu: /api/write(x-if-match)로 쓰고 다시 읽어 확인한다.
   function commit(planFn, label) {
     return serial(async () => {
       const T0 = Date.now(), tm = {}; let tl = T0;
       const lap = (k) => { const n = Date.now(); tm[k] = (tm[k] ?? 0) + n - tl; tl = n; };
-      need();
-      planFn();                                     // 리스를 부르기 전에 빠르게 확인
-      lap("plan");
-      const conn = await connect();
-      lap("login");
-      if (await conn.pending()) throw fail(409, "리스에 검토 대기 중인 외부 변경이 있어요. 리스 화면에서 먼저 처리한 뒤 다시 해 주세요", { pending: true });
-      const { f, results, text } = planFn();      // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인
+      const host = need();
+      let conn = null, rconn = null;
+      if (host === "risubard") { await planFn(); lap("plan"); conn = await connect(); lap("login"); if (await conn.pending()) throw fail(409, "리스에 검토 대기 중인 외부 변경이 있어요. 리스 화면에서 먼저 처리한 뒤 다시 해 주세요", { pending: true }); }
+      else if (host === "pocketrisu") { rconn = await client.connect(); lap("login"); }
+      const { f, results, text, plugins: nextPlugins } = await planFn(rconn);   // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인
       lap("check");
-      const snap = snapshot(f, results);
+      const snap = snapshot(f, results, host);
       lap("snapshot");
+      const names = results.map((r) => r.name).join(", ");
+      if (host !== "risubard") {
+        const want = sha256(JSON.stringify(nextPlugins));
+        if (host === "risuai") {
+          try { atomicWrite(f.file, text); } catch (e) { throw fail(500, `파일을 쓰지 못했어요: ${e.message}`, { written: false, snapshot: snap }); }
+        } else {
+          const put = () => client.risu("POST", "/api/write", { headers: { ...rconn.headers(), "file-path": DB_NAME, "content-type": "application/octet-stream", ...(f.etag ? { "x-if-match": f.etag } : {}) }, raw: text, timeout: 120000 });
+          let r = await put();
+          if (r.status === 423) { await rconn.renew(); r = await put(); }
+          if (r.status === 409) throw fail(409, "다른 곳(브라우저·다른 기기)에서 방금 저장해서 고치지 못했어요. 새로고침한 뒤 다시 해 주세요", { conflict: true, snapshot: snap, written: false });
+          if (r.status !== 200) throw fail(502, `리스에 쓰지 못했어요(응답 ${r.status}${r.json?.error ? `: ${r.json.error}` : ""})`, { written: false, snapshot: snap });
+        }
+        lap("write");
+        log(`플러그인 ${label}: ${names} → ${host} (스냅샷 ${snap})`);
+        // 브라우저가 들고 있던 옛 목록으로 다시 저장해 버렸는지 잠깐 뒤 확인한다
+        let verified = true, overwritten = false;
+        if (verifyMs > 0) {
+          await sleep(verifyMs);
+          try { const g = await load(rconn); verified = sha256(JSON.stringify(g.plugins)) === want; overwritten = !verified; } catch (e) { verified = false; }
+        }
+        lap("verify");
+        tm.total = Date.now() - T0;
+        log(`플러그인 ${label} 걸린 시간(ms): ${JSON.stringify(tm)}${overwritten ? " — 브라우저가 덮어썼어요" : ""}`);
+        return { ok: true, host, file: f.rel, snapshot: snap, results, adopted: !overwritten, reload: true, stillPending: false, needsReload: true, verified, overwritten, timing: tm };
+      }
       try {
         atomicWrite(f.file, text);
         atomicWrite(f.file + ".sha256", sha256(text) + "\n");
       } catch (e) {
         // 쓰다가 실패: 원래 파일로 되돌린다(스냅샷에서)
-        try { fs.copyFileSync(path.join(snapRoot, snap, f.rel), f.file); if (fs.existsSync(path.join(snapRoot, snap, f.rel + ".sha256"))) fs.copyFileSync(path.join(snapRoot, snap, f.rel + ".sha256"), f.file + ".sha256"); } catch { /* 스냅샷은 남아 있다 */ }
+        try { fs.copyFileSync(path.join(snapRoot, snap, f.rel), f.file); if (fs.existsSync(path.join(snapRoot, snap, f.rel + ".sha256"))) fs.copyFileSync(path.join(snapRoot, snap, f.rel + ".sha256"), f.file + ".sha256"); } catch { /* 되돌리기 실패 */ }
         throw fail(500, `파일을 쓰지 못했어요: ${e.message}`, { written: false, snapshot: snap });
       }
       lap("write");
@@ -227,7 +277,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
 
   async function apply({ edits } = {}) {
     const list = validate(edits);
-    return commit(() => plan(list), "수정");
+    return commit((conn) => plan(list, conn), "수정");
   }
 
   // ── 일반 수정(켜짐·이름·별칭·인자값·순서·추가·삭제·통째 바꾸기) ──
@@ -242,11 +292,11 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     if (header !== pl.name) throw fail(400, `'${pl.name}'의 머리말 //@name이 ${header ? `'${header}'` : "없어요"}`);
     return { enabled: true, version: "3.0", versionOfPlugin: "", updateURL: "", arguments: {}, realArg: {}, customLink: [], argMeta: {}, displayName: pl.name, ...pl };
   }
-  function planOps(ops, expectListSha) {
-    const f = load();
+  async function planOps(ops, expectListSha, conn) {
+    const f = await load(conn);
     if (!f) throw fail(404, "설치된 플러그인 목록을 찾지 못했어요");
-    let plugins = f.obj.plugins.map((p) => ({ ...p }));
-    if (expectListSha && listSha(f.obj.plugins) !== expectListSha) throw fail(409, "그새 플러그인 목록이 바뀌었어요. 새로고침한 뒤 다시 해 주세요", { conflict: true, listChanged: true });
+    let plugins = f.plugins.map((p) => ({ ...p }));
+    if (expectListSha && listSha(f.plugins) !== expectListSha) throw fail(409, "그새 플러그인 목록이 바뀌었어요. 새로고침한 뒤 다시 해 주세요", { conflict: true, listChanged: true });
     const results = [];
     for (const o of ops) {
       if (!o || typeof o.op !== "string") throw fail(400, "알 수 없는 작업이에요");
@@ -304,7 +354,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
         results.push({ op: "replaceAll", name: "전체", count: plugins.length });
       } else throw fail(400, `알 수 없는 작업이에요: ${o.op}`);
     }
-    return { f, results, text: serialize({ ...f.obj, plugins }, f.text) };
+    return { f, results, text: f.encode(plugins), plugins };
   }
   async function mutate({ ops, expectListSha } = {}) {
     if (!Array.isArray(ops) || !ops.length) throw fail(400, "할 작업이 없어요");
@@ -312,16 +362,16 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
     if (ops.some((o) => o?.op === "order" || o?.op === "replaceAll") && !expectListSha) throw fail(400, "순서·통째 바꾸기는 expectListSha(목록 해시)가 필요해요");
     ops = ops.map((o) => (o?.plugin?.scriptZ ? { ...o, plugin: inflateEdit(o.plugin) } : o));
     ops = ops.map((o) => (o?.op === "replaceAll" && Array.isArray(o.plugins) ? { ...o, plugins: o.plugins.map((p) => (p?.scriptZ ? inflateEdit(p) : p)) } : o));
-    return commit(() => planOps(ops, expectListSha), "변경");
+    return commit((conn) => planOps(ops, expectListSha, conn), "변경");
   }
   // 전체 내보내기(백업용): 코드·인자값까지 모두. gzip:true면 JSON 전체를 gzip+base64로 준다
   async function exportAll({ gzip } = {}) {
     need();
-    const f = load();
+    const f = await load();
     if (!f) throw fail(404, "설치된 플러그인 목록을 찾지 못했어요");
-    const out = { ok: true, listSha: listSha(f.obj.plugins), location: f.where };
-    if (gzip) return { ...out, plugins: undefined, pluginsZ: zlib.gzipSync(Buffer.from(JSON.stringify(f.obj.plugins), "utf8")).toString("base64") };
-    return { ...out, plugins: f.obj.plugins };
+    const out = { ok: true, listSha: listSha(f.plugins), location: f.where };
+    if (gzip) return { ...out, plugins: undefined, pluginsZ: zlib.gzipSync(Buffer.from(JSON.stringify(f.plugins), "utf8")).toString("base64") };
+    return { ...out, plugins: f.plugins };
   }
 
   return { list, get, apply, mutate, exportAll, detect: () => detectHost(saveDir) };

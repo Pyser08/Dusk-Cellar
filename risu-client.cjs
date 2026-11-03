@@ -7,10 +7,11 @@ const crypto = require("node:crypto");
 const fail = (status, message, extra) => Object.assign(new Error(message), { status, ...(extra ? { extra } : {}) });
 
 function createRisuClient({ saveDir, risuUrl, fetchImpl = globalThis.fetch }) {
-  async function risu(method, p, { body, headers, timeout = 20000, raw } = {}) {
+  async function risu(method, p, { body, headers, timeout = 20000, raw, bin } = {}) {
     const ctrl = new AbortController(), t = setTimeout(() => ctrl.abort(), timeout);
     try {
-      const res = await fetchImpl(risuUrl + p, { method, headers: { "content-type": "application/json", ...headers }, body: raw ?? (body === undefined ? undefined : JSON.stringify(body)), signal: ctrl.signal });
+      const res = await fetchImpl(risuUrl + p, { method, headers: { ...(bin || (raw instanceof Uint8Array) ? {} : { "content-type": "application/json" }), ...headers }, body: raw ?? (body === undefined ? undefined : JSON.stringify(body)), signal: ctrl.signal });
+      if (bin) return { status: res.status, json: null, buf: Buffer.from(await res.arrayBuffer()), headers: res.headers };
       let json = null; try { json = await res.json(); } catch { /* JSON 아님 */ }
       return { status: res.status, json };
     } catch (e) { throw fail(424, `리스 서버에 연결하지 못했어요(${risuUrl}): ${e.name === "AbortError" ? "응답이 없어요" : e.message}`); } finally { clearTimeout(t); }

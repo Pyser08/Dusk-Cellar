@@ -145,3 +145,13 @@ Node 기본 모듈만 써요(`npm install` 불필요).
 - `{action:"apply"}` → `git merge --ff-only` → 모든 `.cjs`를 새 프로세스에서 불러와 보고, 실패하면 이전 커밋으로 되돌려요 → 응답 뒤 Cellar만 다시 켜요(실행기가 바뀌었으면 `fullRestart:true`, pm2 재시작 필요)
 - `{action:"rollback"}` → 직전 업데이트 이전 커밋으로 되돌림
 - 허용 저장소는 `Pyser08/dusk-cellar`만이에요. `git`이 없거나 clone이 아니면 501.
+
+## 플러그인 수정이 되는 호스트 (`/cellar/plugins`)
+
+| 호스트 | 방식 | 덮어쓰기 대비 |
+|---|---|---|
+| RisuBard | 설정 파일을 고치고 리스의 '외부 변경 검토'에서 받아들이게 함 | 리스가 막아 줌 |
+| PocketRisu | `/api/read`로 읽고 `x-if-match` 와 함께 `/api/write` | etag가 어긋나면 409 |
+| 순정 리스AI | `save/<hex>` 의 database.bin에서 `plugins` 블록만 바꿔 씀 | 쓴 뒤 `verifyMs`(3초) 뒤 다시 읽어 확인, 덮어쓰였으면 `overwritten:true` |
+
+옛 형식(raw·compressed) database.bin은 호스트의 msgpackr·fflate를 빌려 풀어요(`--host-dir`, 실행기가 넘겨 줌).

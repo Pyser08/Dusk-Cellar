@@ -81,12 +81,12 @@ if (flag("--role-server")) {
   const backups = saveDir ? createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) || 5, log }) : null;
   // 플러그인 수정(plugins.cjs): 지금은 RisuBard만. 리스 서버 주소는 같은 기기의 --risu-port(기본: 리스와 같은 PORT 환경변수, 없으면 7777)
   const { createPlugins, detectHost } = require("./plugins.cjs");
-  const plugins = saveDir ? createPlugins({ dataDir, saveDir, risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
+  const plugins = saveDir ? createPlugins({ dataDir, saveDir, hostDir: opt("--host-dir", ""), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
   const { createAssets } = require("./assets.cjs");
   const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
   const { createUpdate } = require("./update.cjs");
   const updater = createUpdate({ root: __dirname, dataDir, log });
-  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) === "risubard" ? ["plugins"] : [])];
+  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : [])];
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
   const readJson = (req, max = MAX_VALUE) => new Promise((resolve, reject) => {
     const limit = max + 64 * 1024;
@@ -261,7 +261,7 @@ async function doRestore(id) {
 let dusk = null, fails = 0, restartTimer = null, planned = false;
 function startDusk() {
   if (stopping || flag("--no-dusk")) return;
-  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", dataDir, "--save-dir", saveDir, "--keep", opt("--keep", "5"), "--risu-port", opt("--risu-port", process.env.PORT || "7777")];
+  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", dataDir, "--save-dir", saveDir, "--keep", opt("--keep", "5"), "--risu-port", opt("--risu-port", process.env.PORT || "7777"), "--host-dir", risuRoot];
   const t0 = Date.now();
   dusk = spawn(process.execPath, args, { stdio: ["ignore", "inherit", "inherit", "ipc"], env: process.env });
   dusk.on("message", (m) => {
