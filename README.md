@@ -10,6 +10,19 @@
 - 직접 돌리는 리스 서버 (`server/node/server.cjs`가 있는 RisuAI·RisuBard 등)
 - (권장) pm2 — 없으면 설치할지 물어봐요
 
+## 한 번에 설치 (리눅스·맥·윈도우)
+
+Node.js 22 이상과 git이 있어야 해요. 아래 모두 내부에서는 `git clone` → `node setup.cjs`를 해요(이미 설치돼 있으면 `git pull`로 최신화). 질문에는 터미널에서 답해요.
+
+| 환경 | 방법 |
+|---|---|
+| 리눅스 | 리스 폴더에서 `curl -fsSL https://raw.githubusercontent.com/Pyser08/Dusk-Cellar/main/install.sh \| bash` |
+| 맥 | `install.command`를 리스 폴더에 넣고 더블클릭(처음 한 번은 우클릭 → 열기). 터미널에서는 리눅스와 같은 한 줄도 돼요 |
+| 윈도우 | `install.bat`을 리스 폴더에 넣고 더블클릭 |
+
+- `install.sh [리스 폴더] [setup 옵션…]`처럼 폴더와 `setup.cjs` 옵션(`--yes` 등)을 넘길 수 있어요.
+- 한 줄 설치 주소는 `main` 브랜치 기준이에요. 아직 main에 없으면 받아서 `bash install.sh`로 실행하세요.
+
 ## 설치 (한 번만)
 
 리스 폴더 안에서:
