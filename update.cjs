@@ -20,9 +20,17 @@ function createUpdate({ root, dataDir, allow = DEFAULT_ALLOW, log = () => {}, gi
   const stateFile = path.join(dataDir, "update.json");
   let busy = false;
   const readState = () => { try { return JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch { return {}; } };
+  // 새 코드 검사: 모든 .cjs는 문법만 확인(node --check)하고, 불러와도 아무 일도 안 하는 모듈만 실제로 불러 본다.
+  // cellar-start.cjs·setup.cjs는 불러오는 순간 실행되므로(실행기를 켜 버림) 절대 require하지 않는다.
+  const RUNS_ON_LOAD = new Set(["cellar-start.cjs", "setup.cjs"]);
   async function defaultCheck() {
     const files = fs.readdirSync(root).filter((n) => n.endsWith(".cjs"));
-    for (const f of files) await run(process.execPath, ["-e", `require(${JSON.stringify(path.join(root, f))})`], root, 20000).catch((e) => { throw new Error(`${f}: ${e.message}`); });
+    for (const f of files) {
+      const file = path.join(root, f);
+      await run(process.execPath, ["--check", file], root, 20000).catch((e) => { throw new Error(`${f}: ${e.message}`); });
+      if (RUNS_ON_LOAD.has(f)) continue;
+      await run(process.execPath, ["-e", `require(${JSON.stringify(file)})`], root, 20000).catch((e) => { throw new Error(`${f}: ${e.message}`); });
+    }
   }
   check = check ?? defaultCheck;
   async function prepare() {

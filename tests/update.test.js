@@ -66,3 +66,20 @@ test("허용하지 않은 저장소와 git이 아닌 폴더는 거부한다", as
   assert.ok(!DEFAULT_ALLOW.test("https://github.com/evil/dusk-cellar"));
   await assert.rejects(createUpdate({ root: tmp(), dataDir: r.dataDir, allow: /./ }).check(), (e) => e.status === 501);
 });
+
+test("기본 새 코드 검사는 불러오면 실행되는 파일(cellar-start.cjs)을 실행하지 않는다", async () => {
+  const r = repos(), marker = path.join(r.b, "RAN");
+  fs.writeFileSync(path.join(r.a, "cellar-start.cjs"), `require("fs").writeFileSync(${JSON.stringify(marker)}, "x");\n`); g(r.a, "add", "."); g(r.a, "commit", "-qm", "실행기"); g(r.a, "push", "-q", "origin", "main");
+  const u = createUpdate({ root: r.b, dataDir: r.dataDir, allow: /./ });
+  const out = await u.apply();
+  assert.equal(out.updated, true);
+  assert.equal(fs.existsSync(marker), false);
+});
+
+test("기본 새 코드 검사는 문법 오류를 잡아 이전 버전으로 되돌린다", async () => {
+  const r = repos(), u = createUpdate({ root: r.b, dataDir: r.dataDir, allow: /./ });
+  r.publish("bad.cjs", "const = ;\n", "깨진 코드");
+  const before = g(r.b, "rev-parse", "HEAD");
+  await assert.rejects(u.apply(), (e) => e.status === 500 && /bad\.cjs/.test(e.message));
+  assert.equal(g(r.b, "rev-parse", "HEAD"), before);
+});
