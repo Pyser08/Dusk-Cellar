@@ -18,6 +18,6 @@
 - [x] 실행 구조, 설치기, README (2026-11-03, b48c204)
 - [x] 실제 설치 시험: RisuBard(우분투 서버, ~/RisuBard/Dusk-Cellar, pm2) 5/5 통과, health 응답 확인 (2026-11-03). RisuBard 시작 파일 = server/node/server.cjs 자동 찾기 성공
 - [ ] 윈도우·맥·Termux, 원본 RisuAI 설치 시험
-- [x] 플러그인 연결(2026-11-03): 플러그인이 nativeFetch로 http://127.0.0.1:6011/cellar/health 확인 → 리스 노드 서버의 /proxy2(리스 암호 필요)가 대신 보내므로 loopback 요청은 토큰 없이 허용, `--require-token`이면 토큰 필수. Atelier `src/data/cellar.js`·설정 '서버' 카드. 미확인: 실제 RisuBard에서 '연결됨'
+- [x] 플러그인 연결(2026-11-03): 플러그인이 nativeFetch로 http://127.0.0.1:6011/cellar/health 확인 → 리스 노드 서버의 /proxy2(리스 암호 필요)가 대신 보내므로 loopback 요청은 토큰 없이 허용, `--require-token`이면 토큰 필수. Atelier `src/data/cellar.js`·설정 '서버' 카드. 실제 RisuBard(Oracle VM, 외부 접속)에서 '연결됨' 확인(2026-11-03)
 - [ ] 1단계: 기억 백업 + 화면에 필요한 조각만 돌려주기, 속도 측정
 - [ ] (효과 있으면) 분석·임베딩 서버 실행
