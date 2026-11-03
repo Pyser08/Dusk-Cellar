@@ -92,6 +92,28 @@ node Dusk-Cellar/cellar-start.cjs -- --port 6001   # -- 뒤는 리스에 그대�
 | `POST /cellar/backup` `{action:"restore", id}` | 복원(리스가 잠깐 꺼졌다 켜짐) |
 | `POST /cellar/backup` `{action:"delete", id}` | 백업 지우기 |
 
+## 플러그인 코드 수정 (`/cellar/plugins`, RisuBard만)
+
+리스는 플러그인이 다른 플러그인을 고치지 못하게 막았어요(RisuAI PR #1572). 그래서 Cellar가 대신 고쳐요. `/cellar/health`의 `features`에 `plugins`가 있으면 쓸 수 있어요(세이브 폴더가 RisuBard 모양일 때). PocketRisu·원본 RisuAI는 `501`이에요(다음 단계).
+
+| 요청 | 하는 일 |
+|---|---|
+| `POST /cellar/plugins` `{action:"list"}` | 설치된 플러그인 목록(이름·버전·크기·코드 해시·인자 **이름**만. 코드와 인자 값은 안 줘요) |
+| `POST /cellar/plugins` `{action:"get", name, index?}` | 그 플러그인의 코드와 해시 |
+| `POST /cellar/plugins` `{action:"apply", edits:[{name, index?, expectSha, script}]}` | 코드 바꾸기(한 번에 20개까지) |
+
+`apply`의 순서와 안전장치:
+1. **입력·해시 확인** — `expectSha`(지금 코드의 sha256)가 다르면 `409`(`conflict`, `currentSha`). 머리말 `//@name`이 플러그인 이름과 다르면 `400`(이름을 바꾸면 플러그인 저장소·업데이트가 끊겨요). 같은 이름이 둘이면 `index` 필요.
+2. **로그인** — `<세이브>/__password`를 읽어 리스 `/api/login`으로 로그인하고 새 세션을 등록해요. 리스 암호를 따로 묻지 않아요(로컬 실행 + 플러그인 화면의 확인 창이 허락을 대신해요). 리스 주소는 `--risu-port`(기본 `PORT` 환경변수, 없으면 7777). 안 되면 `424`, 파일은 안 건드려요.
+3. **검토 대기 없음 확인** — 리스에 이미 처리 안 된 외부 변경이 있으면 `409`(`pending`)로 멈춰요. 남의 변경을 대신 받아들이지 않아요.
+4. **파일 스냅샷** — 고칠 파일(과 `.sha256`)을 `dusk-data/plugin-backups/<시각>/`에 복사해 둬요(최근 20개).
+5. **파일 쓰기** — `settings/app.json`(플러그인 인자 이름에 key·token 같은 말이 있으면 `secrets/credentials.json`)의 그 플러그인 `script`만 바꿔요. 들여쓰기·줄바꿈은 원래대로, 사이드카 체크섬도 새로 써요. 임시 파일 → 바꿔치기로 써요.
+6. **받아들이기** — 리스가 바뀐 파일을 '외부 변경'으로 잡으면, 바뀐 파일이 **우리 것뿐일 때만** `/api/external-changes/resolve`(accept)로 받아들여요. 다른 파일이 섞여 있으면 받아들이지 않고 `409`(`written: true`, `others`).
+- 쓴 뒤에 실패하면 되돌리지 않고(리스는 파일 지문에 mtime을 써서 되돌려도 '검토 대기'가 남아요) 쓴 상태 그대로 `502`/`409`와 `written: true`, `snapshot`을 알려요. 리스 화면의 '외부 변경 검토'에서 받아들이면 돼요.
+- 성공하면 `needsReload: true` — 리스를 새로고침해야 새 코드로 돌아요(열린 화면은 옛 코드 그대로).
+- 남는 위험: 설치된 **아무 플러그인이나** 이 주소를 부를 수 있어요. 믿을 수 있는 플러그인만 설치하세요.
+- 실제 RisuBard 서버로는 아직 시험하지 못했어요(소스 조사 + 가짜 서버 시험). 확인 목록은 `HandOff/STATE.md`.
+
 ## 보안
 
 - Cellar는 기본으로 `127.0.0.1`(이 기기)에서만 받아요.

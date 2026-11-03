@@ -16,7 +16,8 @@
 - `cellar-start.cjs` — 실행기 + 서버(같은 파일 `--role-server`). 리스 종료 → Cellar 종료·같은 코드, Cellar만 죽으면 최대 5번 재시작(1·2·4·8·16초), 포트 사용 중(78)이면 리스만.
 - `store.cjs` — 기억 저장소(키-값 파일 저장, rev·baseRev 충돌 검사, opId 재전송 무시, 일별 스냅샷 7일). `cellar-start.cjs`의 `/cellar/mem*` 주소가 사용.
 - `backup.cjs` — 세이브 백업·복원(바뀐 파일만 복사, 나머지는 직전 백업과 하드링크, 리스 파일과는 링크 안 함). 복원은 실행기 `doRestore`가 IPC 메시지(type restore)로 받아 리스·Cellar를 멈추고 '복원 전 자동' 백업 후 동기화하고 다시 켠다.
-- `tests/` — `node --test tests/*.js tests/*.mjs` (34개).
+- `plugins.cjs` — 플러그인 코드 수정(RisuBard만). 호스트 구분(`detectHost`), list·get·apply. `/cellar/plugins`가 사용(아래 '플러그인 수정').
+- `tests/` — `node --test tests/*.js tests/*.mjs` (53개). `tests/helpers/fakerisubard.cjs` = RisuBard 세이브 폴더 흉내 + 가짜 RisuBard 서버(로그인·세션·외부 변경 검토).
 
 ## 진행
 - [x] 실행 구조, 설치기, README (2026-11-03, b48c204)
@@ -34,12 +35,19 @@
 - [ ] 속도 측정(서버 저장 vs 플러그인 저장)
 - [ ] (효과 있으면) 분석·임베딩 서버 실행
 
-## 다음 작업: 플러그인 수정(무중단) — 사용자 결정 2026-11-03, 미착수
+## 플러그인 수정(무중단) — 사용자 결정 2026-11-03, RisuBard 구현 2026-11-03 (feat/0.1.0)
 리스는 플러그인이 다른 플러그인을 고치지 못하게 막았다(RisuAI PR #1572, 플러그인 API에서 plugins 필드 읽기 전용). Cellar가 대신 고친다.
-- **허락(사용자 결정 2026-11-03):** 리스 암호 입력은 넣지 않는다(로컬 실행 + 검증된 플러그인만 배포된다는 판단). Atelier 화면의 확인 창 + 고치기 전 Cellar 증분 백업 자동으로 대신한다. 남는 위험: 설치된 아무 플러그인이나 Cellar 수정 주소를 부를 수 있음(사용자 인지). 리스 API 인증(PocketRisu `/api/login`)은 Cellar가 `save/__password`를 직접 읽어서 한다(원본·PocketRisu 동일 위치, RisuBard 확인 필요).
-- **새로고침:** 플러그인 iframe은 sandbox(allow-top-navigation 없음)라 리스 전체 새로고침 불가 → 고친 뒤 안내. `Risuai.loadPlugins()`는 메모리 DB 기준이라 효과 미확인.
-- 호스트별(소스 조사 결과, 실기기 미확인):
-  1. **RisuBard**(조사: rpaddict/RisuBard): 데이터가 `save/kv` + 정식 파일(`save/settings/app.json`, 비밀 이름 키가 섞이면 `save/secrets/credentials.json`)로도 풀려 있고, 바깥 수정 감지·사용자 검토(EXTERNAL_CHANGES_PENDING) 및 `/api/external-edit/start`·`finish`(외부 파일 감시 켜져 있어야 함, auth+active session 필요)가 있다. 플러그인 목록은 app.json의 `plugins`. → app.json 수정 후 리스의 검토/채택 흐름을 쓰면 무중단·덮어쓰기 없음. sha256 검증 파일 여부(`readCanonicalJson`) 확인 필요.
-  2. **PocketRisu**(PocketRisu/PocketRisu): `save/risuai.db`(SQLite WAL, 'database/database.bin'은 chunkStore). 서버가 DB를 메모리(dbCache)에 둠 → 파일 직접 수정 금지, **리스 API로**: `/api/login`(암호)→JWT, `/api/session`(새 x-session-id, 사용자 제스처 헤더 없이 → 잠금 안 뺏고 '새 세션'이라 쓰기 통과), `/api/read`로 DB 받아 RisuSave 디코드 → plugins 블록(type 9, name 'plugins', JSON) 교체 → `/api/write` + `x-if-match` etag. 열린 화면은 409 → `rebaseTrackedLocalChangesOnLatestServerDb`로 서버 값 위에 자기 변경만 다시 얹음 → 덮어쓰기 없음. RisuSave 인코더/디코더를 Cellar에 구현해야 함(가장 큰 작업; 서버 쪽 `utils.cjs` decodeRisuSave·encodeRisuSaveLegacy 참고, 청크/스텁 처리 주의).
-  3. **원본 RisuAI**(kwaroran/RisuAI): `save/`에 hex 이름 파일, `database/database.bin` = RisuSave(`RISUSAVE\0` + 블록, plugins 블록 type 9). 서버는 파일 저장만 → 리스 안 멈춰도 됨. **충돌 방지 없음** → 열린 화면이 다음 저장 때 덮어씀. 고친 직후 모두 새로고침 경고 필수. 마지막 순서.
-- 순서 제안: RisuBard → PocketRisu → 원본. Cellar `POST /cellar/plugins`(action list/apply, password) + Atelier 플러그인 탭에 수정 화면(미리 보기·암호·결과).
+- **허락(사용자 결정):** 리스 암호 입력은 넣지 않는다(로컬 실행 + 검증된 플러그인만 배포된다는 판단). Atelier 화면의 확인 창 + 고치기 전 백업으로 대신한다. 남는 위험: 설치된 아무 플러그인이나 Cellar 수정 주소를 부를 수 있음(사용자 인지). 리스 API 인증은 Cellar가 `<세이브>/__password`를 직접 읽어 `/api/login`으로 한다(RisuBard 소스로 확인: `savePath/__password`, `POST /api/login {password}` → `{token}`, 헤더 `risu-auth`).
+- **새로고침:** 플러그인 iframe은 sandbox(allow-top-navigation 없음)라 리스 전체 새로고침 불가 → 고친 뒤 안내(Atelier 결과 화면). `Risuai.loadPlugins()`는 메모리 DB 기준이라 효과 미확인.
+- [x] **RisuBard 구현(2026-11-03)** — `plugins.cjs`, `POST /cellar/plugins`(list·get·apply), features `plugins`, 시험 19개(단위 17 + 실행기 통합 2). 소스 조사(rpaddict/risubard 1fb48ea):
+  - 플러그인 = `db.plugins`(RisuPlugin: name·displayName·script·arguments·realArg·version('3.0')·versionOfPlugin·updateURL…). 저장: `splitSecrets`가 top-level 키별로 `settings/app.json` 또는 `secrets/credentials.json`으로 나눈다 — 키 이름이 `key|token|secret|password|credential…`이거나 **배열 값 안에 그런 키가 있으면 배열째 secrets로** 간다(플러그인 인자 이름에 apiKey 등이 있으면 plugins 전체가 credentials.json). Cellar는 두 파일을 다 보고 있는 쪽을 고친다(둘 다 있으면 거절). `script`만 바꾸므로 키 구성이 안 바뀌어 위치도 안 바뀐다.
+  - 파일마다 `.sha256` 사이드카. 리스의 외부 변경 감지 = 정식 파일들의 지문(크기+mtime(ns)+사이드카) 리비전이 '받아들인 리비전'과 다르면 `externalChangesAwaitingReview()` → 쓰기가 409 `EXTERNAL_CHANGES_PENDING`. `GET /api/external-changes` → `pending{revision, changes[], errors[]}`, `POST /api/external-changes/resolve {decision:"accept", revision}`(인증 + `x-session-id`)로 받아들임. 설정 파일 변경(kind settings)은 `reload:true`(탭 새로고침).
+  - 세션 잠금(`session-lock.cjs`): 새 세션을 `/api/session`으로 등록하면 '새로 부팅한 세션'이라 사용자 제스처 헤더 없이도 쓰기는 통과하되 잠금을 뺏지는 않는다. 단 열린 탭이 그 뒤에 쓰면 우리 세션이 stale → resolve가 423 → Cellar는 새 세션을 등록해 한 번 더 시도.
+  - `/api/external-edit/start·finish`는 외부 파일 감시 켜짐이 필요한데 소스 주석에 '외부 감시는 폐지(retired)'라 쓰지 않았다.
+  - 포트 = `PORT` 환경변수(기본 7777), 데이터 폴더 = `RISUBARD_DATA_ROOT` 또는 `<cwd>/save`(실행기는 이제 `--save-dir` 기본값에 이 환경변수를 반영, `--risu-port` 추가).
+- **실제 서버 미확인(사용자 확인 필요):** ① 우리가 고친 settings/app.json을 리스가 '외부 변경 검토'로 잡고 accept 되는지 ② 열린 화면의 이후 저장이 우리 수정을 덮는지 ③ 3.6MB 본문이 nativeFetch→/proxy2→Cellar로 지나는지(Atelier 자신을 고칠 때) ④ 고치기 전 세이브 백업 시간(31만 파일)과 '최근 5개' 보관에 수동 백업이 밀려나는 문제. 이 환경에서는 npm 레지스트리에 못 닿아 실제 RisuBard를 띄우지 못했다.
+- 확인 방법(RisuBard 서버): `curl -s -X POST localhost:6011/cellar/plugins -H 'content-type: application/json' -d '{"action":"list"}'`(리스 프록시를 거치지 않는 서버 안에서). 그다음 Atelier 플러그인 탭 → ··· → 코드 수정에서 머리말만 그대로인 한 줄을 고쳐 보기(되돌리기 버튼으로 원복 가능). 스냅샷은 `dusk-data/plugin-backups/`.
+- [ ] **PocketRisu**(PocketRisu/PocketRisu): `save/risuai.db`(SQLite WAL, 'database/database.bin'은 chunkStore). 서버가 DB를 메모리(dbCache)에 둠 → 파일 직접 수정 금지, **리스 API로**: `/api/login`(암호)→JWT, `/api/session`(새 x-session-id, 사용자 제스처 헤더 없이 → 잠금 안 뺏고 '새 세션'이라 쓰기 통과), `/api/read`로 DB 받아 RisuSave 디코드 → plugins 블록(type 9, name 'plugins', JSON) 교체 → `/api/write` + `x-if-match` etag. 열린 화면은 409 → `rebaseTrackedLocalChangesOnLatestServerDb`로 서버 값 위에 자기 변경만 다시 얹음 → 덮어쓰기 없음. RisuSave 인코더/디코더를 Cellar에 구현해야 함(가장 큰 작업; 서버 쪽 `utils.cjs` decodeRisuSave·encodeRisuSaveLegacy 참고, 청크/스텁 처리 주의).
+- [ ] **원본 RisuAI**(kwaroran/RisuAI): `save/`에 hex 이름 파일, `database/database.bin` = RisuSave(`RISUSAVE\0` + 블록, plugins 블록 type 9). 서버는 파일 저장만 → 리스 안 멈춰도 됨. **충돌 방지 없음** → 열린 화면이 다음 저장 때 덮어씀. 고친 직후 모두 새로고침 경고 필수. 마지막 순서.
+- 순서: RisuBard(끝) → PocketRisu → 원본.
+- Atelier 쪽(feat/1.8.3): `src/data/cellarplugins.js`, `src/ui/screens/pluginedit.js`, 플러그인 탭 행 메뉴 '코드 수정'. 고치기 전 세이브 백업은 Atelier 화면이 기존 `/cellar/backup`으로 먼저 돌리고(기본 켜짐), 설정 파일 스냅샷은 서버가 apply마다 항상 만든다.

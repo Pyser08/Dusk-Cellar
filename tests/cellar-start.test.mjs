@@ -150,3 +150,42 @@ test("백업·복원(HTTP): 리스를 멈췄다가 세이브를 되돌리고 다
     assert.equal(ch.exitCode, null, "실행기는 계속 돈다");
   } finally { ch.kill("SIGTERM"); await exited(ch); }
 });
+
+test("/cellar/plugins: 기능 표시 + list·get·apply·충돌 응답이 실행기를 거쳐 동작한다", async () => {
+  const { sha, plugin, setup, fakeRisubard } = (await import("./helpers/fakerisubard.cjs")).default;
+  const root = fakeRisu(), p = port();
+  const s = setup();
+  const risu = await fakeRisubard(s.saveDir);
+  const risuPort = new URL(risu.url).port;
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", s.dataDir, "--save-dir", s.saveDir, "--risu-port", risuPort], { stdio: "ignore" });
+  const post = async (body) => { const r = await fetch(`http://127.0.0.1:${p}/cellar/plugins`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }); return { status: r.status, json: await r.json() }; };
+  try {
+    const h = await health(p);
+    assert.ok(h.features.includes("plugins"), "RisuBard 세이브 폴더면 plugins 기능을 알린다");
+    const l = await post({ action: "list" });
+    assert.equal(l.status, 200); assert.equal(l.json.plugins.length, 2);
+    const g = await post({ action: "get", name: "dusk_atelier" });
+    assert.equal(g.json.script, plugin("dusk_atelier").script);
+    const bad = await post({ action: "apply", edits: [{ name: "dusk_atelier", expectSha: sha("옛 코드"), script: "//@name dusk_atelier\nx\n" }] });
+    assert.equal(bad.status, 409); assert.equal(bad.json.conflict, true); assert.equal(bad.json.currentSha, sha(plugin("dusk_atelier").script));
+    const script = "//@name dusk_atelier\n//@api 3.0\nconsole.log('새 코드');\n";
+    const ok = await post({ action: "apply", edits: [{ name: "dusk_atelier", expectSha: sha(plugin("dusk_atelier").script), script }] });
+    assert.equal(ok.status, 200); assert.equal(ok.json.adopted, true); assert.equal(ok.json.needsReload, true);
+    assert.equal(s.read("settings/app.json").plugins[0].script, script);
+    assert.equal((await post({ action: "nope" })).status, 400);
+    assert.equal((await fetch(`http://127.0.0.1:${p}/cellar/plugins`)).status, 404, "GET은 없다(POST만)");
+  } finally { ch.kill("SIGTERM"); await exited(ch); await risu.close(); }
+});
+
+test("세이브 폴더가 RisuBard가 아니면 plugins 기능을 알리지 않고, 쓰려 하면 501", async () => {
+  const root = fakeRisu(), p = port(), save = fs.mkdtempSync(path.join(os.tmpdir(), "save-"));
+  fs.writeFileSync(path.join(save, "risuai.db"), "");
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d"), "--save-dir", save], { stdio: "ignore" });
+  try {
+    const h = await health(p);
+    assert.ok(!h.features.includes("plugins"));
+    const r = await fetch(`http://127.0.0.1:${p}/cellar/plugins`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "list" }) });
+    const j = await r.json();
+    assert.equal(r.status, 501); assert.equal(j.host, "pocketrisu");
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
+});

@@ -18,6 +18,8 @@
 //   · Dusk 데이터는 이 파일 옆 dusk-data/ 에만 쓴다.
 //   · 기억 저장소 코드는 같은 폴더의 store.cjs, 백업은 backup.cjs(함께 있어야 한다).
 //   · 백업 대상: 리스 세이브 폴더(기본 <리스>/save, --save-dir) + dusk-data/mem. 보관 개수 --keep(기본 5).
+//   · 세이브 폴더 기본값: RISUBARD_DATA_ROOT 환경변수가 있으면 그 폴더, 없으면 <리스>/save.
+//   · 플러그인 수정(plugins.cjs, 지금은 RisuBard만): 리스 서버 주소는 127.0.0.1:--risu-port(기본 PORT 환경변수, 없으면 7777).
 "use strict";
 const { spawn } = require("node:child_process");
 const fs = require("node:fs");
@@ -77,6 +79,10 @@ if (flag("--role-server")) {
   const saveDir = opt("--save-dir", "");
   const { createBackups } = require("./backup.cjs");
   const backups = saveDir ? createBackups({ dataDir, saveDir, keep: Number(opt("--keep", 5)) || 5, log }) : null;
+  // 플러그인 수정(plugins.cjs): 지금은 RisuBard만. 리스 서버 주소는 같은 기기의 --risu-port(기본: 리스와 같은 PORT 환경변수, 없으면 7777)
+  const { createPlugins, detectHost } = require("./plugins.cjs");
+  const plugins = saveDir ? createPlugins({ dataDir, saveDir, risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, log }) : null;
+  const features = () => ["mem", ...(backups ? ["backup"] : []), ...(plugins && detectHost(saveDir) === "risubard" ? ["plugins"] : [])];
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
   const readJson = (req) => new Promise((resolve, reject) => {
     const limit = MAX_VALUE + 64 * 1024;
@@ -90,7 +96,7 @@ if (flag("--role-server")) {
       const url = new URL(req.url, "http://x");
       if (req.method === "OPTIONS") return send(res, 204, {});
       // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음). features: 이 서버가 지원하는 기능
-      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: backups ? ["mem", "backup"] : ["mem"] });
+      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: features() });
       if (!authed(req)) return send(res, 401, { ok: false, error: "토큰이 없거나 달라요" });
 
       // 기억 저장소(store.cjs). 쓰기는 모두 POST /cellar/mem/batch로도 보낼 수 있다(프록시가 PUT·DELETE를 막을 때 대비)
@@ -128,10 +134,20 @@ if (flag("--role-server")) {
           return send(res, 400, { ok: false, error: "action은 create·restore·delete예요" });
         }
       }
+      // 플러그인 수정. 쓰기는 POST만(리스 프록시가 GET·POST만 확실히 넘긴다). action: list · get · apply
+      if (url.pathname === "/cellar/plugins" && req.method === "POST") {
+        if (!plugins) return send(res, 404, { ok: false, error: "세이브 폴더를 몰라서 플러그인을 고칠 수 없어요(--save-dir)" });
+        const b = await readJson(req);
+        if (b.action === "list") return send(res, 200, await plugins.list());
+        if (b.action === "get") return send(res, 200, await plugins.get(b));
+        if (b.action === "apply") return send(res, 200, await plugins.apply(b));
+        return send(res, 400, { ok: false, error: "action은 list·get·apply예요" });
+      }
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {
       // 충돌(409)이면 서버의 현재 rev를 알려 준다. 플러그인은 GET으로 값을 받아 합친 뒤 그 rev로 다시 쓴다
-      const extra = e.conflict ? { conflict: true, rev: e.rev } : {};
+      // e.extra: 플러그인 수정이 알려 주는 상세(현재 해시·스냅샷 이름·쓰였는지 등)
+      const extra = { ...(e.conflict ? { conflict: true, rev: e.rev } : {}), ...(e.extra ?? {}) };
       send(res, e.status ?? 500, { ok: false, error: String(e?.message ?? e), ...extra });
     }
   });
@@ -168,7 +184,8 @@ if (!entry) {
 const risuRoot = path.basename(path.dirname(entry)) === "node" && path.basename(path.dirname(path.dirname(entry))) === "server" ? path.dirname(path.dirname(path.dirname(entry))) : path.dirname(entry);
 
 const dataDir = opt("--data-dir", path.join(__dirname, "dusk-data"));
-const saveDir = path.resolve(opt("--save-dir", path.join(risuRoot, "save")));
+// RisuBard는 RISUBARD_DATA_ROOT 환경변수로 데이터 폴더를 옮길 수 있다(없으면 <리스>/save). 환경변수는 리스 자식 프로세스와 같이 물려받는다.
+const saveDir = path.resolve(opt("--save-dir", process.env.RISUBARD_DATA_ROOT?.trim() || path.join(risuRoot, "save")));
 let stopping = false, restoring = false;
 log(`리스 시작: ${path.relative(process.cwd(), entry) || entry}`);
 let risu = null;
@@ -215,7 +232,7 @@ async function doRestore(id) {
 let dusk = null, fails = 0, restartTimer = null;
 function startDusk() {
   if (stopping || flag("--no-dusk")) return;
-  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", dataDir, "--save-dir", saveDir, "--keep", opt("--keep", "5")];
+  const args = [__filename, "--role-server", ...(flag("--require-token") ? ["--require-token"] : []), "--dusk-port", opt("--dusk-port", "6011"), "--dusk-host", opt("--dusk-host", "127.0.0.1"), "--data-dir", dataDir, "--save-dir", saveDir, "--keep", opt("--keep", "5"), "--risu-port", opt("--risu-port", process.env.PORT || "7777")];
   const t0 = Date.now();
   dusk = spawn(process.execPath, args, { stdio: ["ignore", "inherit", "inherit", "ipc"], env: process.env });
   dusk.on("message", (m) => { if (m?.type === "restore" && typeof m.id === "string") doRestore(m.id); });
