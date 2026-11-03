@@ -69,3 +69,4 @@
 - `risusave.cjs`(RISUSAVE 블록에서 plugins 블록만 교체, 옛 형식은 호스트 msgpackr·fflate), `plugins.cjs`가 호스트별 load/write/verify. risuai: 파일 + 쓴 뒤 재확인(`overwritten`), pocketrisu: /api/read·/api/write(x-if-match). 스냅샷은 database.bin 대신 plugins.json.gz.
 - 시험: tests/plugins-hosts.test.js (Cellar 80 통과). **미확인**: 진짜 PocketRisu·리스AI 서버, 옛 형식은 가짜 코덱으로만 시험(진짜 msgpackr 없음), PocketRisu 쓰기 뒤 브라우저 쪽 동작, 블록 형식이 아닌 세이브.
 - Cellar→리스 호출은 설정한 주소가 안 되면 PORT·7777·6001을 시도하고 성공한 주소를 기억. 실패 메시지에 시도한 주소와 원인 코드(ECONNREFUSED 등)를 담음.
+- 서버 자식은 실행기와 IPC가 끊기면 스스로 종료(disconnect), stdout/stderr EPIPE 무시. pm2가 실행기만 죽여 고아 Cellar가 6011을 붙잡던 문제(2026-11-03 사용자 로그) 대응.

@@ -38,6 +38,10 @@ const log = (...a) => console.log("[cellar]", ...a);
 
 // ── Dusk Cellar (자식 프로세스로 실행됨) ──
 if (flag("--role-server")) {
+  // 실행기가 사라지면(pm2가 실행기만 강제 종료 등) 고아로 남아 포트를 붙잡고 있지 않게 스스로 끝낸다
+  process.on("disconnect", () => process.exit(0));
+  // 부모가 사라져 stdout/stderr 파이프가 닫히면 로그 한 줄에 EPIPE로 죽지 않게 한다(요청 처리 중에 죽으면 응답 없이 연결이 끊긴다)
+  for (const st of [process.stdout, process.stderr]) st.on("error", () => {});
   const port = Number(opt("--dusk-port", 6011));
   const host = opt("--dusk-host", "127.0.0.1");
   const dataDir = path.resolve(opt("--data-dir", path.join(__dirname, "dusk-data")));
@@ -183,7 +187,7 @@ if (flag("--role-server")) {
     }
   });
   server.on("error", (e) => {
-    if (e.code === "EADDRINUSE") { log(`포트 ${port}를 이미 쓰고 있어요. --dusk-port로 다른 번호를 주세요.`); process.exit(78); }
+    if (e.code === "EADDRINUSE") { log(`포트 ${port}를 이미 쓰고 있어요. 이전 Dusk Cellar가 남아 있을 수 있어요(ss -ltnp | grep ${port} 로 찾아 kill). 아니면 --dusk-port로 다른 번호를 주세요.`); process.exit(78); }
     log("서버 오류:", e.message); process.exit(1);
   });
   server.listen(port, host, () => log(`Dusk Cellar v${VERSION} — http://${host}:${port}/cellar/health`));

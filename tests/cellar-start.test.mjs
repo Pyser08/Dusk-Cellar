@@ -188,3 +188,14 @@ test("세이브 폴더를 알아볼 수 없으면 plugins 기능을 알리지 �
     assert.equal(r.status, 501); assert.equal(j.host, "unknown");
   } finally { ch.kill("SIGTERM"); await exited(ch); }
 });
+
+test("실행기와의 연결이 끊기면 Dusk Cellar 서버는 스스로 끝난다(고아로 포트를 붙잡지 않음)", async () => {
+  const root = fakeRisu(), p = port();
+  const ch = spawn(process.execPath, [LAUNCHER, "--role-server", "--dusk-port", String(p), "--data-dir", path.join(root, "d")], { stdio: ["ignore", "ignore", "ignore", "ipc"] });
+  try {
+    await health(p);
+    ch.disconnect();
+    const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 4000); ch.once("exit", (c) => { clearTimeout(t); res(c); }); });
+    assert.equal(code, 0);
+  } finally { ch.kill("SIGKILL"); }
+});
