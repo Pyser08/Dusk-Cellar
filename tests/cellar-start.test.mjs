@@ -5,7 +5,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const LAUNCHER = path.resolve("dusk-start.cjs");
+const LAUNCHER = path.resolve("cellar-start.cjs");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const port = () => 20000 + Math.floor(Math.random() * 20000);
 
@@ -21,13 +21,13 @@ function fakeRisu() {
 }
 async function health(p, token) {
   for (let i = 0; i < 40; i++) {
-    try { const r = await fetch(`http://127.0.0.1:${p}/dusk/health`, { headers: token ? { authorization: `Bearer ${token}` } : {} }); return await r.json(); } catch { await sleep(100); }
+    try { const r = await fetch(`http://127.0.0.1:${p}/cellar/health`, { headers: token ? { authorization: `Bearer ${token}` } : {} }); return await r.json(); } catch { await sleep(100); }
   }
-  throw new Error("Dusk 서버가 안 떴어요");
+  throw new Error("Dusk Cellar가 안 떴어요");
 }
 const exited = (child) => new Promise((r) => child.on("exit", (code) => r(code)));
 
-test("리스와 Dusk 서버가 함께 켜지고, 리스 폴더에서 리스를 돌린다", async () => {
+test("리스와 Dusk Cellar가 함께 켜지고, 리스 폴더에서 리스를 돌린다", async () => {
   const root = fakeRisu(), p = port();
   const data = path.join(root, "dusk-data");
   const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", data, "--", "--port", "6001"], { stdio: "ignore" });
@@ -36,7 +36,7 @@ test("리스와 Dusk 서버가 함께 켜지고, 리스 폴더에서 리스를 �
     assert.equal(h.ok, true); assert.equal(h.auth, false);
     const token = fs.readFileSync(path.join(data, "token.txt"), "utf8").trim();
     assert.equal((await health(p, token)).auth, true);
-    const r = await fetch(`http://127.0.0.1:${p}/dusk/x`);
+    const r = await fetch(`http://127.0.0.1:${p}/cellar/x`);
     assert.equal(r.status, 401);
     assert.equal(fs.readFileSync(path.join(root, "cwd.txt"), "utf8"), `${fs.realpathSync(root)}|--port,6001`);
   } finally { ch.kill("SIGTERM"); await exited(ch); }
@@ -48,7 +48,7 @@ test("리스가 꺼지면 Dusk도 꺼지고 같은 종료 코드로 끝난다", 
   await health(p);
   assert.equal(await exited(ch), 3);
   await sleep(200);
-  await assert.rejects(fetch(`http://127.0.0.1:${p}/dusk/health`));
+  await assert.rejects(fetch(`http://127.0.0.1:${p}/cellar/health`));
 });
 
 test("리스 시작 파일이 없으면 알려 주고 끝난다", async () => {

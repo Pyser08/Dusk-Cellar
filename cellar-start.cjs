@@ -1,16 +1,16 @@
 #!/usr/bin/env node
-// Dusk Atelier 실행기 — 리스 서버와 Dusk 서버를 한 명령으로 함께 켠다.
+// Dusk Cellar 실행기 — 리스 서버와 Dusk Cellar를 한 명령으로 함께 켠다.
 //
 // 쓰는 법 (리스 폴더에 이 파일을 두고):
-//   node dusk-start.cjs                       리스(server/node/server.cjs)와 Dusk 서버를 함께 켬
-//   node dusk-start.cjs --risu 경로/server.cjs   리스 시작 파일이 다른 곳에 있을 때
-//   node dusk-start.cjs --dusk-port 6011      Dusk 서버 포트(기본 6011)
-//   node dusk-start.cjs --no-dusk             Dusk 없이 리스만
-//   pm2 start dusk-start.cjs --name risu      pm2로 쓸 때(리스 대신 이 파일을 등록)
-//   -- 뒤의 인자는 리스에 그대로 넘긴다:  node dusk-start.cjs -- --port 6001
+//   node cellar-start.cjs                       리스(server/node/server.cjs)와 Dusk Cellar를 함께 켬
+//   node cellar-start.cjs --risu 경로/server.cjs   리스 시작 파일이 다른 곳에 있을 때
+//   node cellar-start.cjs --dusk-port 6011      Dusk Cellar 포트(기본 6011)
+//   node cellar-start.cjs --no-dusk             Dusk 없이 리스만
+//   pm2 start cellar-start.cjs --name risu      pm2로 쓸 때(리스 대신 이 파일을 등록)
+//   -- 뒤의 인자는 리스에 그대로 넘긴다:  node cellar-start.cjs -- --port 6001
 //
 // 동작:
-//   · 리스를 먼저 켜고, Dusk 서버를 따로(자식 프로세스) 켠다 — 서로 오류가 번지지 않는다.
+//   · 리스를 먼저 켜고, Dusk Cellar를 따로(자식 프로세스) 켠다 — 서로 오류가 번지지 않는다.
 //   · 리스가 꺼지면 Dusk도 끄고 같은 종료 코드로 끝낸다(pm2가 리스 재시작을 그대로 맡는다).
 //   · Dusk가 죽으면 Dusk만 다시 켠다(최대 5번, 점점 늦게). 리스는 건드리지 않는다.
 //   · Ctrl+C·종료 신호는 둘 다에게 전한다.
@@ -30,9 +30,9 @@ const own = dash < 0 ? argv : argv.slice(0, dash);
 const pass = dash < 0 ? [] : argv.slice(dash + 1);
 const opt = (name, def) => { const i = own.indexOf(name); return i >= 0 && own[i + 1] && !own[i + 1].startsWith("--") ? own[i + 1] : def; };
 const flag = (name) => own.includes(name);
-const log = (...a) => console.log("[dusk]", ...a);
+const log = (...a) => console.log("[cellar]", ...a);
 
-// ── Dusk 서버 (자식 프로세스로 실행됨) ──
+// ── Dusk Cellar (자식 프로세스로 실행됨) ──
 if (flag("--role-server")) {
   const port = Number(opt("--dusk-port", 6011));
   const host = opt("--dusk-host", "127.0.0.1");
@@ -69,7 +69,7 @@ if (flag("--role-server")) {
       const url = new URL(req.url, "http://x");
       if (req.method === "OPTIONS") return send(res, 204, {});
       // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음)
-      if (url.pathname === "/dusk/health") return send(res, 200, { ok: true, name: "dusk-atelier-server", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req) });
+      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req) });
       if (!authed(req)) return send(res, 401, { ok: false, error: "토큰이 없거나 달라요" });
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {
@@ -80,7 +80,7 @@ if (flag("--role-server")) {
     if (e.code === "EADDRINUSE") { log(`포트 ${port}를 이미 쓰고 있어요. --dusk-port로 다른 번호를 주세요.`); process.exit(78); }
     log("서버 오류:", e.message); process.exit(1);
   });
-  server.listen(port, host, () => log(`Dusk 서버 v${VERSION} — http://${host}:${port}/dusk/health`));
+  server.listen(port, host, () => log(`Dusk Cellar v${VERSION} — http://${host}:${port}/cellar/health`));
   const stop = () => server.close(() => process.exit(0));
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
@@ -91,7 +91,7 @@ if (flag("--role-server")) {
 
 // ── 실행기 ──
 function findRisu() {
-  const given = opt("--risu", process.env.DUSK_RISU_ENTRY);
+  const given = opt("--risu", process.env.CELLAR_RISU_ENTRY);
   const cands = given ? [given] : [
     path.join(process.cwd(), "server", "node", "server.cjs"),
     path.join(__dirname, "server", "node", "server.cjs"),
@@ -121,11 +121,11 @@ function startDusk() {
   dusk.on("exit", (code) => {
     dusk = null;
     if (stopping) return;
-    if (code === 78) { log("Dusk 서버를 켜지 못했어요(포트 사용 중). 리스는 그대로 돌아요."); return; }
+    if (code === 78) { log("Dusk Cellar를 켜지 못했어요(포트 사용 중). 리스는 그대로 돌아요."); return; }
     if (Date.now() - t0 > 60_000) fails = 0;   // 1분 넘게 잘 돌았으면 실패 횟수 초기화
-    if (++fails > 5) { log("Dusk 서버가 계속 꺼져서 다시 켜지 않아요. 리스는 그대로 돌아요."); return; }
+    if (++fails > 5) { log("Dusk Cellar가 계속 꺼져서 다시 켜지 않아요. 리스는 그대로 돌아요."); return; }
     const wait = Math.min(30_000, 1000 * 2 ** (fails - 1));
-    log(`Dusk 서버가 꺼졌어요(코드 ${code}). ${Math.round(wait / 1000)}초 뒤 다시 켜요.`);
+    log(`Dusk Cellar가 꺼졌어요(코드 ${code}). ${Math.round(wait / 1000)}초 뒤 다시 켜요.`);
     restartTimer = setTimeout(startDusk, wait);
   });
 }
@@ -144,7 +144,7 @@ risu.on("exit", (code, sig) => {
   stopping = true;
   clearTimeout(restartTimer);
   if (dusk) dusk.kill("SIGTERM");
-  log(`리스가 꺼졌어요(${sig ?? code}). Dusk 서버도 끕니다.`);
+  log(`리스가 꺼졌어요(${sig ?? code}). Dusk Cellar도 끕니다.`);
   setTimeout(() => process.exit(code ?? (sig ? 1 : 0)), 300);
 });
 risu.on("error", (e) => { log("리스를 켜지 못했어요:", e.message); shutdown("SIGTERM"); process.exit(1); });

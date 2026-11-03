@@ -12,7 +12,7 @@ const touch = (p, s = "") => { fs.mkdirSync(path.dirname(p), { recursive: true }
 test("리스 폴더 안에 클론하면 위쪽에서 시작 파일을 찾는다", () => {
   const risu = tmp();
   touch(path.join(risu, "server/node/server.cjs"));
-  const clone = path.join(risu, "Dusk-Atelier-Server");
+  const clone = path.join(risu, "Dusk-Cellar");
   fs.mkdirSync(clone);
   const e = S.findRisuEntry(clone);
   assert.equal(e, path.join(risu, "server/node/server.cjs"));
@@ -23,7 +23,7 @@ test("리스 옆에 클론했으면 바로 위 폴더 아래를 뒤져 찾는다
   const top = tmp();
   touch(path.join(top, "x/node_modules/server/node/server.cjs"));
   touch(path.join(top, "RisuAI/server/node/server.cjs"));
-  const clone = path.join(top, "Dusk-Atelier-Server");
+  const clone = path.join(top, "Dusk-Cellar");
   fs.mkdirSync(clone);
   assert.equal(S.findRisuEntry(clone), path.join(top, "RisuAI/server/node/server.cjs"));
 });
@@ -50,7 +50,7 @@ test("pm2 목록: 리스를 직접 켜던 항목과 예전 실행기를 추천",
   const rows = S.pm2Rows([
     { pm_id: 0, name: "risu", pm2_env: { status: "online", pm_exec_path: "/srv/risu/server/node/server.cjs" } },
     { pm_id: 1, name: "bot", pm2_env: { status: "online", pm_exec_path: "/srv/bot/index.js" } },
-    { pm_id: 2, name: "old", pm2_env: { status: "stopped", pm_exec_path: "/srv/risu/Dusk/dusk-start.cjs" } },
+    { pm_id: 2, name: "old", pm2_env: { status: "stopped", pm_exec_path: "/srv/risu/Dusk/cellar-start.cjs" } },
   ], "/srv/risu/server/node/server.cjs");
   assert.deepEqual(rows.map((r) => r.recommend), [true, false, true]);
 });
@@ -74,9 +74,9 @@ test("전체 흐름(가짜 pm2·npm): 찾기 → 빌드 → 추천 항목 지우
   const risu = tmp();
   touch(path.join(risu, "server/node/server.cjs"));
   touch(path.join(risu, "package.json"), JSON.stringify({ scripts: { build: "x" } }));
-  const clone = path.join(risu, "Dusk-Atelier-Server");
+  const clone = path.join(risu, "Dusk-Cellar");
   fs.mkdirSync(clone);
-  for (const f of ["setup.cjs", "dusk-start.cjs"]) fs.copyFileSync(path.join(__dirname, "..", f), path.join(clone, f));
+  for (const f of ["setup.cjs", "cellar-start.cjs"]) fs.copyFileSync(path.join(__dirname, "..", f), path.join(clone, f));
   const bin = tmp(), logf = path.join(bin, "calls.log");
   const fake = (name, extra = "") => {
     const p = path.join(bin, name);
@@ -92,7 +92,7 @@ test("전체 흐름(가짜 pm2·npm): 찾기 → 빌드 → 추천 항목 지우
   assert.deepEqual(calls.slice(0, 2), ["npm install", "npm run build"], r.stdout);
   assert.ok(calls.includes("pm2 delete 7"), r.stdout);
   const start = calls.find((l) => l.startsWith("pm2 start"));
-  assert.ok(start.includes(`${clone}/dusk-start.cjs --name risu --cwd ${risu} -- --risu ${risu}/server/node/server.cjs`), start);
+  assert.ok(start.includes(`${clone}/cellar-start.cjs --name risu --cwd ${risu} -- --risu ${risu}/server/node/server.cjs`), start);
   assert.ok(calls.includes("pm2 save"));
 });
 

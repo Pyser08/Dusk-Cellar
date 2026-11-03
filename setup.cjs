@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Dusk Atelier 서버 설치기 — 리스 폴더 안에 이 저장소를 클론한 뒤 `node setup.cjs` 한 번이면 된다.
+// Dusk Cellar 설치기 — 리스 폴더 안에 이 저장소를 클론한 뒤 `node setup.cjs` 한 번이면 된다.
 //
 //   1. 리스 시작 파일(server/node/server.cjs)을 자동으로 찾는다 (이 폴더의 위쪽 → 아래쪽 순)
 //   2. 리스를 빌드한다 (pnpm-lock.yaml이 있으면 pnpm, 없으면 npm: install → build)
 //   3. pm2에 이미 등록된 프로세스 목록을 보여 주고, 지울 것을 고르게 한다
 //      (리스를 직접 돌리던 항목은 '추천'으로 표시 — 이제 실행기가 리스를 대신 켜므로 두 번 켜지지 않게)
-//   4. pm2로 실행기(dusk-start.cjs)를 등록한다 → 리스 + Dusk 서버가 함께 켜진다. 그리고 pm2 save
-//   5. Dusk 서버가 응답하는지 확인한다
+//   4. pm2로 실행기(cellar-start.cjs)를 등록한다 → 리스 + Dusk Cellar가 함께 켜진다. 그리고 pm2 save
+//   5. Dusk Cellar가 응답하는지 확인한다
 //
 // 옵션: --risu <server.cjs 경로>  --name <pm2 이름(기본 risu)>  --dusk-port <포트(기본 6011)>
 //       --no-build  --no-pm2(pm2 없이 바로 실행)  --yes(묻지 않고 기본값)  --dry-run(명령만 보여 줌)
@@ -70,7 +70,7 @@ function pm2Rows(list, entry) {
   return (Array.isArray(list) ? list : []).map((p) => {
     const script = p?.pm2_env?.pm_exec_path ?? "";
     const s = norm(script);
-    const recommend = s === e || /[\\/]server[\\/]node[\\/]server\.cjs$/i.test(script) || /dusk-start\.cjs$/i.test(script);
+    const recommend = s === e || /[\\/]server[\\/]node[\\/]server\.cjs$/i.test(script) || /(cellar|dusk)-start\.cjs$/i.test(script);
     return { id: p.pm_id, name: p.name, status: p?.pm2_env?.status ?? "?", script, recommend };
   });
 }
@@ -127,7 +127,7 @@ const has = (cmd) => capture(cmd, ["--version"]) !== null || capture(cmd, ["-v"]
 async function waitHealth(port, ms = 20000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    try { const r = await fetch(`http://127.0.0.1:${port}/dusk/health`); if (r.ok) return await r.json(); } catch { /* 아직 */ }
+    try { const r = await fetch(`http://127.0.0.1:${port}/cellar/health`); if (r.ok) return await r.json(); } catch { /* 아직 */ }
     await new Promise((r) => setTimeout(r, 500));
   }
   return null;
@@ -136,9 +136,9 @@ async function waitHealth(port, ms = 20000) {
 (async () => {
   const here = __dirname;
   const port = opt("--dusk-port", "6011");
-  const launcher = path.join(here, "dusk-start.cjs");
+  const launcher = path.join(here, "cellar-start.cjs");
   const dataDir = path.join(here, "dusk-data");
-  say("Dusk Atelier 서버 설치" + (DRY ? " (명령만 보기)" : ""));
+  say("Dusk Cellar 설치" + (DRY ? " (명령만 보기)" : ""));
 
   step(1, "리스 시작 파일 찾기");
   const entry = opt("--risu") ? path.resolve(opt("--risu")) : findRisuEntry(here);
@@ -203,7 +203,7 @@ async function waitHealth(port, ms = 20000) {
     }
   }
 
-  step(4, "리스 + Dusk 서버 함께 실행");
+  step(4, "리스 + Dusk Cellar 함께 실행");
   if (usePm2) {
     const name = pickName(opt("--name", "risu"), rows, del);
     const code = run("pm2", ["start", launcher, "--name", name, "--cwd", root, "--", "--risu", entry, "--dusk-port", port, "--data-dir", dataDir]);
@@ -213,12 +213,12 @@ async function waitHealth(port, ms = 20000) {
     say("  PC를 켤 때 자동으로 켜지게 하려면 한 번만: pm2 startup (안내된 명령을 그대로 실행)");
   }
 
-  step(5, "Dusk 서버 확인");
+  step(5, "Dusk Cellar 확인");
   rl.close();
   if (DRY) return say("  (명령만 보기라 확인하지 않아요)");
   const h = await waitHealth(port);
   if (h) {
-    say(`  응답해요: Dusk 서버 v${h.version} — http://127.0.0.1:${port}`);
+    say(`  응답해요: Dusk Cellar v${h.version} — http://127.0.0.1:${port}`);
     say(`  플러그인 연결 토큰: ${path.join(dataDir, "token.txt")} (다른 사람에게 보내지 마세요)`);
   } else say(`  아직 응답이 없어요. pm2 logs 로 오류를 확인해 주세요. (포트 ${port})`);
 })().catch((e) => { say("설치 중 오류:", e?.message ?? e); process.exit(1); });
