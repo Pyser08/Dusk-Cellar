@@ -17,7 +17,7 @@
 - `store.cjs` — 기억 저장소(키-값 파일 저장, rev·baseRev 충돌 검사, opId 재전송 무시, 일별 스냅샷 7일). `cellar-start.cjs`의 `/cellar/mem*` 주소가 사용.
 - `backup.cjs` — 세이브 백업·복원(바뀐 파일만 복사, 나머지는 직전 백업과 하드링크, 리스 파일과는 링크 안 함). 복원은 실행기 `doRestore`가 IPC 메시지(type restore)로 받아 리스·Cellar를 멈추고 '복원 전 자동' 백업 후 동기화하고 다시 켠다.
 - `plugins.cjs` — 플러그인 코드 수정(RisuBard만). 호스트 구분(`detectHost`), list·get·apply. `/cellar/plugins`가 사용(아래 '플러그인 수정').
-- `tests/` — `node --test tests/*.js tests/*.mjs` (53개). `tests/helpers/fakerisubard.cjs` = RisuBard 세이브 폴더 흉내 + 가짜 RisuBard 서버(로그인·세션·외부 변경 검토).
+- `tests/` — `node --test tests/*.js tests/*.mjs` (57개). `tests/helpers/fakerisubard.cjs` = RisuBard 세이브 폴더 흉내 + 가짜 RisuBard 서버(로그인·세션·외부 변경 검토).
 
 ## 진행
 - [x] 실행 구조, 설치기, README (2026-11-03, b48c204)
@@ -47,6 +47,7 @@
   - 포트 = `PORT` 환경변수(기본 7777), 데이터 폴더 = `RISUBARD_DATA_ROOT` 또는 `<cwd>/save`(실행기는 이제 `--save-dir` 기본값에 이 환경변수를 반영, `--risu-port` 추가).
 - **실제 서버 미확인(사용자 확인 필요):** ① 우리가 고친 settings/app.json을 리스가 '외부 변경 검토'로 잡고 accept 되는지 ② 열린 화면의 이후 저장이 우리 수정을 덮는지 ③ 3.6MB 본문이 nativeFetch→/proxy2→Cellar로 지나는지(Atelier 자신을 고칠 때) ④ 고치기 전 세이브 백업 시간(31만 파일)과 '최근 5개' 보관에 수동 백업이 밀려나는 문제. 이 환경에서는 npm 레지스트리에 못 닿아 실제 RisuBard를 띄우지 못했다.
 - 확인 방법(RisuBard 서버): `curl -s -X POST localhost:6011/cellar/plugins -H 'content-type: application/json' -d '{"action":"list"}'`(리스 프록시를 거치지 않는 서버 안에서). 그다음 Atelier 플러그인 탭 → ··· → 코드 수정에서 머리말만 그대로인 한 줄을 고쳐 보기(되돌리기 버튼으로 원복 가능). 스냅샷은 `dusk-data/plugin-backups/`.
+- [x] (2026-11-03) RisuBard `mutate`·`export` 일반화(켜짐·별칭·인자값·순서·추가/교체·삭제·통째 바꾸기) + gzip 전송. 시험 57개. 실제 서버 미확인.
 - [ ] **PocketRisu**(PocketRisu/PocketRisu): `save/risuai.db`(SQLite WAL, 'database/database.bin'은 chunkStore). 서버가 DB를 메모리(dbCache)에 둠 → 파일 직접 수정 금지, **리스 API로**: `/api/login`(암호)→JWT, `/api/session`(새 x-session-id, 사용자 제스처 헤더 없이 → 잠금 안 뺏고 '새 세션'이라 쓰기 통과), `/api/read`로 DB 받아 RisuSave 디코드 → plugins 블록(type 9, name 'plugins', JSON) 교체 → `/api/write` + `x-if-match` etag. 열린 화면은 409 → `rebaseTrackedLocalChangesOnLatestServerDb`로 서버 값 위에 자기 변경만 다시 얹음 → 덮어쓰기 없음. RisuSave 인코더/디코더를 Cellar에 구현해야 함(가장 큰 작업; 서버 쪽 `utils.cjs` decodeRisuSave·encodeRisuSaveLegacy 참고, 청크/스텁 처리 주의).
 - [ ] **원본 RisuAI**(kwaroran/RisuAI): `save/`에 hex 이름 파일, `database/database.bin` = RisuSave(`RISUSAVE\0` + 블록, plugins 블록 type 9). 서버는 파일 저장만 → 리스 안 멈춰도 됨. **충돌 방지 없음** → 열린 화면이 다음 저장 때 덮어씀. 고친 직후 모두 새로고침 경고 필수. 마지막 순서.
 - 순서: RisuBard(끝) → PocketRisu → 원본.

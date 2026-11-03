@@ -110,6 +110,7 @@ node Dusk-Cellar/cellar-start.cjs -- --port 6001   # -- 뒤는 리스에 그대�
 5. **파일 쓰기** — `settings/app.json`(플러그인 인자 이름에 key·token 같은 말이 있으면 `secrets/credentials.json`)의 그 플러그인 `script`만 바꿔요. 들여쓰기·줄바꿈은 원래대로, 사이드카 체크섬도 새로 써요. 임시 파일 → 바꿔치기로 써요.
 6. **받아들이기** — 리스가 바뀐 파일을 '외부 변경'으로 잡으면, 바뀐 파일이 **우리 것뿐일 때만** `/api/external-changes/resolve`(accept)로 받아들여요. 다른 파일이 섞여 있으면 받아들이지 않고 `409`(`written: true`, `others`).
 - 쓴 뒤에 실패하면 되돌리지 않고(리스는 파일 지문에 mtime을 써서 되돌려도 '검토 대기'가 남아요) 쓴 상태 그대로 `502`/`409`와 `written: true`, `snapshot`을 알려요. 리스 화면의 '외부 변경 검토'에서 받아들이면 돼요.
+- 목록 전체를 바꾸는 `mutate`·`export`도 있어요(플러그인 매니저 기능용): `{action:"mutate", ops:[...], expectListSha?}` — ops는 `set`(켜짐·표시이름·별칭·인자·인자값·링크·업데이트 주소만), `remove`, `add`(같은 이름이면 `replace`+`keepSettings`), `order`(현재 번호를 모두 한 번씩), `replaceAll`(통째 바꾸기). `order`·`replaceAll`은 `list`가 준 `listSha`가 필요하고 그새 바뀌었으면 `409`. 모두 `apply`와 같은 순서(스냅샷 → 쓰기 → 리스가 받아들임)로 처리돼요. `{action:"export", gzip?}`은 코드·인자값까지 전부 줘요(백업용).
 - 큰 코드는 gzip으로 주고받아요: `get`에 `gzip:true`를 주면 `scriptZ`(gzip+base64)로, `apply`는 `script` 대신 `scriptZ`도 받아요(리스 프록시가 응답을 조각조각 넘겨서 수 MB 코드가 느린 것을 줄이려고).
 - 성공하면 `needsReload: true` — 리스를 새로고침해야 새 코드로 돌아요(열린 화면은 옛 코드 그대로).
 - 남는 위험: 설치된 **아무 플러그인이나** 이 주소를 부를 수 있어요. 믿을 수 있는 플러그인만 설치하세요.
