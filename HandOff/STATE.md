@@ -36,7 +36,7 @@
 
 ## 다음 작업: 플러그인 수정(무중단) — 사용자 결정 2026-11-03, 미착수
 리스는 플러그인이 다른 플러그인을 고치지 못하게 막았다(RisuAI PR #1572, 플러그인 API에서 plugins 필드 읽기 전용). Cellar가 대신 고친다.
-- **허락:** Atelier에서 사용자가 직접 수정할 때만. 요청마다 **리스 암호 입력**(다른 플러그인은 암호를 모름 — 프록시 인증은 리스가 붙임, pluginStorage는 모든 플러그인 공유라 비밀 보관 불가). 확인 후 10분은 Atelier 메모리에만 허락 유지. 고치기 전 Cellar 증분 백업 자동.
+- **허락(사용자 결정 2026-11-03):** 리스 암호 입력은 넣지 않는다(로컬 실행 + 검증된 플러그인만 배포된다는 판단). Atelier 화면의 확인 창 + 고치기 전 Cellar 증분 백업 자동으로 대신한다. 남는 위험: 설치된 아무 플러그인이나 Cellar 수정 주소를 부를 수 있음(사용자 인지). 리스 API 인증(PocketRisu `/api/login`)은 Cellar가 `save/__password`를 직접 읽어서 한다(원본·PocketRisu 동일 위치, RisuBard 확인 필요).
 - **새로고침:** 플러그인 iframe은 sandbox(allow-top-navigation 없음)라 리스 전체 새로고침 불가 → 고친 뒤 안내. `Risuai.loadPlugins()`는 메모리 DB 기준이라 효과 미확인.
 - 호스트별(소스 조사 결과, 실기기 미확인):
   1. **RisuBard**(조사: rpaddict/RisuBard): 데이터가 `save/kv` + 정식 파일(`save/settings/app.json`, 비밀 이름 키가 섞이면 `save/secrets/credentials.json`)로도 풀려 있고, 바깥 수정 감지·사용자 검토(EXTERNAL_CHANGES_PENDING) 및 `/api/external-edit/start`·`finish`(외부 파일 감시 켜져 있어야 함, auth+active session 필요)가 있다. 플러그인 목록은 app.json의 `plugins`. → app.json 수정 후 리스의 검토/채택 흐름을 쓰면 무중단·덮어쓰기 없음. sha256 검증 파일 여부(`readCanonicalJson`) 확인 필요.
