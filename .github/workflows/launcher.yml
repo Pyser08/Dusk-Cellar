@@ -1,0 +1,24 @@
+name: Build Windows launcher
+on:
+  push:
+    paths: ["launcher/cellar-launcher.c", ".github/workflows/launcher.yml"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile
+        shell: bash
+        run: |
+          cd launcher
+          gcc -municode -O2 -o cellar-launcher-win-x64.exe cellar-launcher.c -lshell32
+      - name: Commit exe
+        shell: bash
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@users.noreply.github.com"
+          git add launcher/cellar-launcher-win-x64.exe
+          git diff --cached --quiet || (git commit -m "launcher: 윈도우 실행 파일 빌드" && git push)

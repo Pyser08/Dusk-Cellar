@@ -10,18 +10,23 @@
 - 직접 돌리는 리스 서버 (`server/node/server.cjs`가 있는 RisuAI·RisuBard 등)
 - (권장) pm2 — 없으면 설치할지 물어봐요
 
-## 한 번에 설치 (리눅스·맥·윈도우)
-
-Node.js 22 이상과 git이 있어야 해요. 아래 모두 내부에서는 `git clone` → `node setup.cjs`를 해요(이미 설치돼 있으면 `git pull`로 최신화). 질문에는 터미널에서 답해요.
+## 한 번에 설치 (리눅스·맥·윈도우) — git·Node 없이도 돼요
 
 | 환경 | 방법 |
 |---|---|
+| 윈도우 | `install.bat`을 **리스 폴더**(`bin\node.exe`가 있는 곳)에 넣고 더블클릭 |
+| 맥 | `install.command`를 리스 폴더에 넣고 더블클릭(처음 한 번은 우클릭 → 열기) |
 | 리눅스 | 리스 폴더에서 `curl -fsSL https://raw.githubusercontent.com/Pyser08/Dusk-Cellar/main/install.sh \| bash` |
-| 맥 | `install.command`를 리스 폴더에 넣고 더블클릭(처음 한 번은 우클릭 → 열기). 터미널에서는 리눅스와 같은 한 줄도 돼요 |
-| 윈도우 | `install.bat`을 리스 폴더에 넣고 더블클릭 |
 
-- `install.sh [리스 폴더] [setup 옵션…]`처럼 폴더와 `setup.cjs` 옵션(`--yes` 등)을 넘길 수 있어요.
-- 한 줄 설치 주소는 `main` 브랜치 기준이에요. 아직 main에 없으면 받아서 `bash install.sh`로 실행하세요.
+- **Node는 리스에 들어 있는 `bin/node`를 써요.** 없으면 시스템 Node 22 이상을 찾아요. **git은 없어도 돼요** — 없으면 압축 파일을 받아 풀어요(있으면 `git clone`).
+- **휴대용 리스(`bin/node`가 있는 exe·app 배포본)에서는 빌드·pm2 없이 `이름_cellar` 실행 파일을 만들어요.** 평소에는 이걸 눌러서 쓰면 돼요.
+  - 윈도우: `RisuBard.exe` → `RisuBard_cellar.exe` (exe 템플릿이 없으면 `.bat`)
+  - 맥: `RisuBard.app` → `RisuBard_cellar.app` (원본 아이콘을 가져와요)
+  - 리눅스: `start_cellar.sh`
+  - 리스와 Dusk Cellar가 함께 켜지고 브라우저가 열려요. 창을 닫으면 둘 다 꺼져요.
+- 다시 실행하면 최신으로 바뀌어요(`dusk-data`는 그대로). git 없이 설치했다면 앱 안의 '업데이트' 버튼 대신 설치 파일을 다시 실행하세요.
+- `install.sh [리스 폴더] [setup 옵션…]`처럼 폴더와 옵션(`--yes` 등)을 넘길 수 있어요. 한 줄 설치 주소는 `main` 브랜치 기준이에요.
+- 윈도우 exe는 `launcher/cellar-launcher.c`를 GitHub Actions(`launcher.yml`)가 빌드해 `launcher/cellar-launcher-win-x64.exe`로 올려요.
 
 ## 설치 (한 번만)
 

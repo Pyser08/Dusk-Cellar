@@ -34,7 +34,7 @@ function createUpdate({ root, dataDir, allow = DEFAULT_ALLOW, log = () => {}, gi
   }
   check = check ?? defaultCheck;
   async function prepare() {
-    try { await git(["rev-parse", "--git-dir"]); } catch (e) { throw fail(501, e.code === "ENOENT" ? "git이 설치돼 있지 않아요" : "git으로 설치한 폴더가 아니라서 자동 업데이트를 쓸 수 없어요(직접 받아서 바꿔 주세요)"); }
+    try { await git(["rev-parse", "--git-dir"]); } catch (e) { throw fail(501, e.code === "ENOENT" ? "git이 설치돼 있지 않아요" : "git으로 설치한 폴더가 아니라서 자동 업데이트를 쓸 수 없어요(설치 파일 install.bat / install.command / install.sh를 다시 실행하면 최신으로 바뀌어요)"); }
     const url = await git(["remote", "get-url", "origin"]);
     if (!allow.test(url)) throw fail(403, `허용하지 않은 저장소예요: ${url}`);
     const branch = await git(["rev-parse", "--abbrev-ref", "HEAD"]);

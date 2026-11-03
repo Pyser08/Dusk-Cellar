@@ -80,3 +80,9 @@
 - 위험 점검 결과 보완: 빈/없는 세이브 백업 거부, 디스크 예비 max(2GiB,5%), 오래된 .tmp 정리, unstable 표시, verify(복원 전 점검), 복원 순서(덮어쓰기→삭제), doRestore 실패 시 '복원 전 자동'으로 자동 되돌리기, 되돌리기도 실패하면 리스 보류, restore.pending.json으로 재시작 후 이어하기(최대 2회), restore-status.json → GET restore 필드.
 - 플러그인(Atelier cellarbackup.js)은 복원 응답이 아니라 status를 폴링해 성공/실패를 판단.
 - 확인 못 한 것: 실제 서버에서의 복원 실패·중단·이어하기(가짜 리스 테스트만).
+
+## 휴대용 리스·git/Node 없는 설치 (2026-11-03)
+- install.sh/.command/.bat: bin/node 우선 → 시스템 Node 22+, git 없으면 tar.gz로 받아 풀기(dusk-data 유지). setup.cjs는 bin/node가 있으면 휴대용 모드(빌드·pm2 건너뜀) → portable.cjs가 '이름_cellar' 실행 파일 생성(윈도우 exe 템플릿 있으면 복사·없으면 .bat / 맥 .app 번들+원본 아이콘 / 리눅스 start_cellar.sh).
+- 윈도우 exe는 launcher/cellar-launcher.c를 .github/workflows/launcher.yml이 빌드해 launcher/cellar-launcher-win-x64.exe로 커밋(아직 실행 안 됨 → 그 전엔 .bat).
+- 확인 못 한 것: C 런처 컴파일·실행, 실제 맥 .app 더블클릭(Gatekeeper)·윈도우 bat/tar/curl, 실제 휴대용 배포본.
+- 한계: git 없이 설치하면 앱의 '업데이트' 버튼은 안 돼요(설치 파일 재실행).

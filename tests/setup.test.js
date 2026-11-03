@@ -76,7 +76,7 @@ test("전체 흐름(가짜 pm2·npm): 찾기 → 빌드 → 추천 항목 지우
   touch(path.join(risu, "package.json"), JSON.stringify({ scripts: { build: "x" } }));
   const clone = path.join(risu, "Dusk-Cellar");
   fs.mkdirSync(clone);
-  for (const f of ["setup.cjs", "cellar-start.cjs"]) fs.copyFileSync(path.join(__dirname, "..", f), path.join(clone, f));
+  for (const f of ["setup.cjs", "cellar-start.cjs", "portable.cjs"]) fs.copyFileSync(path.join(__dirname, "..", f), path.join(clone, f));
   const bin = tmp(), logf = path.join(bin, "calls.log");
   const fake = (name, extra = "") => {
     const p = path.join(bin, name);

@@ -15,6 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync, spawn } = require("node:child_process");
 const readline = require("node:readline");
+const portable = require("./portable.cjs");
 
 const WIN = process.platform === "win32";
 const SKIP = new Set(["node_modules", ".git", ".svelte-kit", "dist", "build", ".cache"]);
@@ -163,6 +164,24 @@ async function waitHealth(port, ms = 20000) {
   const root = risuRootOf(entry);
   say(`  찾았어요: ${entry}`);
   say(`  리스 폴더: ${root}`);
+
+  // 휴대용 리스(bin/node가 같이 있는 exe·app 배포본): 빌드·pm2 없이 '이름_cellar' 실행 파일만 만든다
+  if (flag("--portable") || (portable.bundledNode(root) && !flag("--pm2"))) {
+    say("\n휴대용 리스로 보여요(bin/node 있음) — 빌드·pm2 없이 실행 파일만 만들어요.");
+    const tpl = path.join(here, "launcher", "cellar-launcher-win-x64.exe");
+    const ops = portable.plan({
+      root, platform: process.platform, found: portable.findLaunchers(root),
+      exeTemplate: fs.existsSync(tpl) ? tpl : null,
+      icnsFor: (b) => { const p = path.join(root, `${b}.app`, "Contents", "Resources", "AppIcon.icns"); return fs.existsSync(p) ? p : null; },
+    });
+    for (const o of ops) say(`  ${DRY ? "만들 파일" : "만들어요"}: ${path.relative(root, o.path)}`);
+    if (!DRY) portable.apply(ops);
+    if (process.platform === "win32" && !fs.existsSync(tpl)) say("  (exe 템플릿이 아직 없어 .bat로 만들었어요. 아이콘은 없지만 똑같이 동작해요)");
+    say("\n끝났어요. 이제 위의 '..._cellar' 파일을 실행하면 리스와 Dusk Cellar가 함께 켜져요.");
+    say("리스에서 Dusk Atelier 설정 → 서버 → Dusk Cellar가 '연결됨'이면 성공이에요(따로 넣을 것 없음).");
+    rl.close();
+    return;
+  }
 
   step(2, "리스 빌드");
   if (flag("--no-build")) say("  건너뜀 (--no-build)");
