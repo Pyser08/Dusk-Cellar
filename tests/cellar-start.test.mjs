@@ -229,3 +229,21 @@ test("다른 데이터 폴더의 Cellar가 잡은 포트는 건드리지 않고 
     assert.equal((await health(p)).pid, a.pid);
   } finally { a.kill("SIGKILL"); }
 });
+
+test("require()로 불러오면 실행기를 켜지 않고 바로 오류로 끝난다(프로세스 증식 방지)", async () => {
+  const root = fakeRisu(), p = port();
+  const ch = spawn(process.execPath, ["-e", `require(${JSON.stringify(LAUNCHER)})`, path.join(root, "server/node/server.cjs"), "--dusk-port", String(p)], { stdio: "ignore" });
+  const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 5000); ch.once("exit", (c) => { clearTimeout(t); res(c); }); });
+  if (code === "안 끝남") ch.kill("SIGKILL");
+  assert.notEqual(code, "안 끝남"); assert.notEqual(code, 0);
+  const r = await fetch(`http://127.0.0.1:${p}/cellar/health`).then(() => "떠 있음", () => "안 떠 있음");
+  assert.equal(r, "안 떠 있음");
+});
+
+test("실행기가 띄운 프로세스 안에서는 실행기가 또 켜지지 않는다", async () => {
+  const root = fakeRisu(), p = port();
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p)], { stdio: "ignore", env: { ...process.env, DUSK_CELLAR_LAUNCHER: "1" } });
+  const code = await new Promise((res) => { const t = setTimeout(() => res("안 끝남"), 5000); ch.once("exit", (c) => { clearTimeout(t); res(c); }); });
+  if (code === "안 끝남") ch.kill("SIGKILL");
+  assert.equal(code, 1);
+});

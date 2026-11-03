@@ -27,6 +27,9 @@ const path = require("node:path");
 const http = require("node:http");
 const crypto = require("node:crypto");
 
+// 이 파일은 직접 실행하는 파일이다. require()로 불러오면 실행기가 통째로 켜져서(리스·Cellar를 또 띄움) 프로세스가 끝없이 불어난다.
+if (require.main !== module) throw new Error("cellar-start.cjs는 직접 실행하는 파일이에요(require로 불러오면 안 돼요)");
+
 const VERSION = "0.1.0";
 const argv = process.argv.slice(2);
 const dash = argv.indexOf("--");
@@ -216,6 +219,20 @@ if (flag("--role-server")) {
 }
 
 // ── 실행기 ──
+// 리스를 띄울 때 Node 옵션을 그대로 넘기되, 코드를 직접 실행하는 옵션(-e·-p 등)은 빼서 실행기가 자기 자신을 다시 실행하지 못하게 한다
+function cleanExecArgv(args) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i];
+    if (a === "-e" || a === "--eval" || a === "-p" || a === "--print" || a === "-pe" || a === "-c" || a === "--check") { i++; continue; }
+    if (/^--(eval|print)=/.test(a)) continue;
+    out.push(a);
+  }
+  return out;
+}
+// 실행기가 띄운 프로세스 안에서 또 실행기가 켜지면 바로 멈춘다(무한 증식 방지)
+if (process.env.DUSK_CELLAR_LAUNCHER === "1") { log("실행기 안에서 또 실행기를 켜려 해서 멈춰요(무한 증식 방지)"); process.exit(1); }
+
 function findRisu() {
   const given = opt("--risu", process.env.CELLAR_RISU_ENTRY);
   const cands = given ? [given] : [
@@ -241,7 +258,7 @@ let stopping = false, restoring = false;
 log(`리스 시작: ${path.relative(process.cwd(), entry) || entry}`);
 let risu = null;
 function startRisu() {
-  risu = spawn(process.execPath, [...process.execArgv, entry, ...pass], { cwd: risuRoot, stdio: "inherit", env: process.env });
+  risu = spawn(process.execPath, [...cleanExecArgv(process.execArgv), entry, ...pass], { cwd: risuRoot, stdio: "inherit", env: { ...process.env, DUSK_CELLAR_LAUNCHER: "1" } });
   const me = risu;
   me.on("exit", (code, sig) => {
     if (restoring) return;   // 복원하려고 멈춘 것
