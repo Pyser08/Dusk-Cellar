@@ -96,7 +96,20 @@ function pickName(want, rows, deleting) {
   for (let i = 2; ; i++) if (!taken.has(`${want}-${i}`)) return `${want}-${i}`;
 }
 
-module.exports = { findRisuEntry, risuRootOf, buildPlan, pm2Rows, parsePick, pickName };
+// 부팅 시 자동 실행 명령 (pm2 startup이 안내하는 것과 같은 형태). 지원 안 되는 곳은 null + 이유
+function startupPlan({ platform, env = {}, uid, nodeDir, pm2Bin = "pm2" }) {
+  if (platform === "win32") return { skip: "윈도우는 pm2 startup을 지원하지 않아요. 작업 스케줄러에 'pm2 resurrect'를 로그온 시 실행으로 등록하거나 pm2-windows-startup을 쓰세요." };
+  if (env.PREFIX && String(env.PREFIX).includes("com.termux")) return { skip: "Termux는 Termux:Boot 앱으로 자동 실행해요(~/.termux/boot/ 에 'pm2 resurrect' 스크립트)." };
+  const init = platform === "darwin" ? "launchd" : "systemd";
+  const user = env.USER || env.LOGNAME;
+  const home = env.HOME;
+  if (!user || !home) return { skip: "사용자 이름이나 홈 폴더를 알 수 없어요. 직접 'pm2 startup'을 실행해 주세요." };
+  const args = [init, "-u", user, "--hp", home];
+  if (uid === 0) return { cmd: pm2Bin, args: ["startup", ...args] };
+  return { cmd: "sudo", args: ["env", `PATH=${nodeDir}:${env.PATH ?? ""}`, pm2Bin, "startup", ...args] };
+}
+
+module.exports = { findRisuEntry, risuRootOf, buildPlan, pm2Rows, parsePick, pickName, startupPlan };
 if (require.main !== module) return;
 
 // ── 실행 ──
@@ -210,7 +223,14 @@ async function waitHealth(port, ms = 20000) {
     if (code !== 0) { say("  pm2 등록에 실패했어요."); process.exit(code); }
     run("pm2", ["save"]);
     say(`  pm2 이름: ${name}  (끄기: pm2 stop ${name} · 로그: pm2 logs ${name})`);
-    say("  PC를 켤 때 자동으로 켜지게 하려면 한 번만: pm2 startup (안내된 명령을 그대로 실행)");
+    // 부팅 시 자동 실행 (pm2 startup) — 관리자 암호를 물을 수 있어요
+    const sp = startupPlan({ platform: process.platform, env: process.env, uid: process.getuid?.(), nodeDir: path.dirname(process.execPath), pm2Bin: (capture(WIN ? "where" : "which", ["pm2"]) ?? "pm2").split(/\r?\n/)[0].trim() || "pm2" });
+    if (flag("--no-startup")) say("  부팅 시 자동 실행은 건너뜀 (--no-startup)");
+    else if (sp.skip) say(`  부팅 시 자동 실행: ${sp.skip}`);
+    else if (await yes("  서버를 다시 켜도 자동으로 켜지게 할까요? (pm2 startup, 관리자 암호를 물을 수 있어요)")) {
+      if (run(sp.cmd, sp.args) === 0) { run("pm2", ["save"]); say("  부팅 시 자동 실행을 켰어요."); }
+      else say("  자동 실행 등록에 실패했어요. 'pm2 startup'을 직접 실행해 안내된 명령을 따라 주세요.");
+    }
   }
 
   step(5, "Dusk Cellar 확인");

@@ -85,7 +85,7 @@ test("전체 흐름(가짜 pm2·npm): 찾기 → 빌드 → 추천 항목 지우
   };
   fake("npm");
   fake("pm2", `[ "$1" = "jlist" ] && echo '[{"pm_id":7,"name":"risu","pm2_env":{"status":"online","pm_exec_path":"${risu}/server/node/server.cjs"}}]'`);
-  const r = spawnSync(process.execPath, [path.join(clone, "setup.cjs"), "--yes"], {
+  const r = spawnSync(process.execPath, [path.join(clone, "setup.cjs"), "--yes", "--no-startup"], {
     encoding: "utf8", env: { ...process.env, PATH: `${bin}:${path.dirname(process.execPath)}` }, timeout: 40000,
   });
   const calls = fs.readFileSync(logf, "utf8").split("\n").filter(Boolean).filter((l) => !/ (--version|-v)$/.test(l));
@@ -99,4 +99,15 @@ test("전체 흐름(가짜 pm2·npm): 찾기 → 빌드 → 추천 항목 지우
 test("--yes 없이(비대화) 실행하면 pm2 항목을 지우지 않는다", () => {
   const rows = S.pm2Rows([{ pm_id: 1, name: "risu", pm2_env: { pm_exec_path: "/a/server/node/server.cjs" } }], "/a/server/node/server.cjs");
   assert.deepEqual(S.parsePick("", rows), []);
+});
+
+test("부팅 시 자동 실행 명령: 리눅스 일반 계정은 sudo, root는 바로, 맥은 launchd, 윈도우·Termux는 안내만", () => {
+  const env = { USER: "ubuntu", HOME: "/home/ubuntu", PATH: "/usr/bin" };
+  assert.deepEqual(S.startupPlan({ platform: "linux", env, uid: 1000, nodeDir: "/opt/node/bin", pm2Bin: "/usr/lib/pm2" }),
+    { cmd: "sudo", args: ["env", "PATH=/opt/node/bin:/usr/bin", "/usr/lib/pm2", "startup", "systemd", "-u", "ubuntu", "--hp", "/home/ubuntu"] });
+  assert.deepEqual(S.startupPlan({ platform: "linux", env, uid: 0, nodeDir: "/n" }).args, ["startup", "systemd", "-u", "ubuntu", "--hp", "/home/ubuntu"]);
+  assert.equal(S.startupPlan({ platform: "darwin", env, uid: 501, nodeDir: "/n" }).args[4], "launchd");
+  assert.ok(S.startupPlan({ platform: "win32", env }).skip);
+  assert.ok(S.startupPlan({ platform: "linux", env: { ...env, PREFIX: "/data/data/com.termux/files/usr" } }).skip);
+  assert.ok(S.startupPlan({ platform: "linux", env: {} }).skip);
 });
