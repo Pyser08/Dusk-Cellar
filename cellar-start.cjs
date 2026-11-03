@@ -95,7 +95,10 @@ if (flag("--role-server")) {
         const key = decodeURIComponent(url.pathname.slice("/cellar/mem/".length));
         if (req.method === "GET") {
           const got = mem.get(key);
-          return got ? send(res, 200, { ok: true, ...got }) : send(res, 404, { ok: false, error: "없는 키예요" });
+          if (!got) return send(res, 404, { ok: false, error: "없는 키예요" });
+          // ifRev: 플러그인이 이미 가진 rev와 같으면 값을 빼고 보낸다(큰 기억 폴더를 매번 다시 받지 않게)
+          if (url.searchParams.get("ifRev") === String(got.rev)) return send(res, 200, { ok: true, key, rev: got.rev, updatedAt: got.updatedAt, same: true });
+          return send(res, 200, { ok: true, ...got });
         }
         if (req.method === "PUT") { const b = await readJson(req); return send(res, 200, mem.put(key, b.value, b)); }
         if (req.method === "DELETE") return send(res, 200, mem.del(key, { baseRev: url.searchParams.get("baseRev") ?? undefined }));

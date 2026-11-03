@@ -90,6 +90,9 @@ test("기억 저장소 주소: 쓰기·읽기·목록·충돌·재전송·삭제
     const bad = await call("PUT", `${base}/${K}`, { value: "x", baseRev: 0 });
     assert.equal(bad.status, 409); assert.equal(bad.json.conflict, true); assert.equal(bad.json.rev, 1);
     assert.equal((await call("GET", `${base}/${K}`)).json.value, '{"n":1}');
+    const same = (await call("GET", `${base}/${K}?ifRev=1`)).json;
+    assert.equal(same.same, true); assert.equal(same.value, undefined, "rev가 같으면 값을 빼고 보낸다");
+    assert.equal((await call("GET", `${base}/${K}?ifRev=0`)).json.value, '{"n":1}');
     const b = await call("POST", `${base}/batch`, { ops: [{ op: "put", key: "dusk.mem.v3.index", value: "idx", baseRev: 0 }, { op: "put", key: K, value: "no", baseRev: 0 }] });
     assert.equal(b.json.results[0].ok, true); assert.equal(b.json.results[1].conflict, true);
     assert.deepEqual((await call("GET", `${base}?prefix=dusk.mem.v3.f.`)).json.items.map((x) => x.key), [K]);

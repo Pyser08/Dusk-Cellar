@@ -62,7 +62,7 @@ node Dusk-Cellar/cellar-start.cjs -- --port 6001   # -- 뒤는 리스에 그대�
 | 요청 | 하는 일 |
 |---|---|
 | `GET /cellar/mem?prefix=` | 키 목록(rev·수정 시각·크기) |
-| `GET /cellar/mem/<키>` | 값과 rev |
+| `GET /cellar/mem/<키>?ifRev=` | 값과 rev (`ifRev`가 지금 rev와 같으면 값 없이 `same: true`) |
 | `PUT /cellar/mem/<키>` `{value, baseRev?, opId?}` | 쓰기 |
 | `DELETE /cellar/mem/<키>?baseRev=` | 삭제 |
 | `POST /cellar/mem/batch` `{ops:[{op:"put"\|"del", key, ...}]}` | 여러 개 한 번에(차례대로, 하나가 실패해도 나머지는 계속) |
