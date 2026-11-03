@@ -62,3 +62,4 @@
 
 ## 자체 업데이트 (2026-11-03)
 - `update.cjs` + `POST /cellar/update`(check/apply/rollback), 실행기 IPC `restart`(Cellar만 즉시 재시작, 실패 횟수 초기화). features에 "update". 시험: tests/update.test.js(실제 git 저장소 사용). Cellar 71 통과. 서버 실물(pm2) 확인은 아직.
+- 플러그인 수정/관리 응답에 `timing`(plan·login·check·snapshot·write·detect·accept·final·total, ms)을 넣고 로그에도 남김 — 느림 원인 측정용.

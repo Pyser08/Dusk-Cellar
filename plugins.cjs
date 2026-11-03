@@ -177,12 +177,18 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
   // 파일을 고치는 공통 흐름: planFn()은 지금 파일 기준으로 { f, results, text }를 만든다(두 번 불린다: 리스를 부르기 전·쓰기 직전)
   function commit(planFn, label) {
     return serial(async () => {
+      const T0 = Date.now(), tm = {}; let tl = T0;
+      const lap = (k) => { const n = Date.now(); tm[k] = (tm[k] ?? 0) + n - tl; tl = n; };
       need();
       planFn();                                     // 리스를 부르기 전에 빠르게 확인
+      lap("plan");
       const conn = await connect();
+      lap("login");
       if (await conn.pending()) throw fail(409, "리스에 검토 대기 중인 외부 변경이 있어요. 리스 화면에서 먼저 처리한 뒤 다시 해 주세요", { pending: true });
       const { f, results, text } = planFn();      // 로그인하는 사이 바뀌었을 수 있어 쓰기 직전에 다시 확인
+      lap("check");
       const snap = snapshot(f, results);
+      lap("snapshot");
       try {
         atomicWrite(f.file, text);
         atomicWrite(f.file + ".sha256", sha256(text) + "\n");
@@ -191,6 +197,7 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
         try { fs.copyFileSync(path.join(snapRoot, snap, f.rel), f.file); if (fs.existsSync(path.join(snapRoot, snap, f.rel + ".sha256"))) fs.copyFileSync(path.join(snapRoot, snap, f.rel + ".sha256"), f.file + ".sha256"); } catch { /* 스냅샷은 남아 있다 */ }
         throw fail(500, `파일을 쓰지 못했어요: ${e.message}`, { written: false, snapshot: snap });
       }
+      lap("write");
       log(`플러그인 ${label}: ${results.map((r) => r.name).join(", ")} → ${f.rel} (스냅샷 ${snap})`);
       const after = { written: true, snapshot: snap, file: f.rel };
       let adopted = false, reload = false;
@@ -200,7 +207,9 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
         const paths = (pend.changes ?? []).map((c) => String(c.path ?? c.id ?? ""));
         const others = paths.filter((x) => x !== f.rel);
         if (others.length || (pend.errors ?? []).length) throw fail(409, "파일은 고쳤지만, 다른 파일도 바뀌어 있어서 자동으로 받아들이지 않았어요. 리스 화면의 '외부 변경 검토'에서 확인해 주세요", { ...after, others, errors: pend.errors ?? [] });
+        lap("detect");
         const r = await conn.resolve(pend.revision);
+        lap("accept");
         if (r.status === 200 && r.json?.resolved) { adopted = true; reload = r.json.reload === true; break; }
         if (r.status === 200) break;                                           // resolved:false — 더 받아들일 게 없다
         if (attempt === 0 && r.status === 423) { await conn.renew(); continue; }   // 세션이 밀렸으면 새 세션으로 한 번 더
@@ -208,7 +217,10 @@ function createPlugins({ saveDir, dataDir, risuUrl, log = () => {}, fetchImpl = 
         throw fail(502, `파일은 고쳤지만 리스가 받아들이지 못했어요(응답 ${r.status}${r.json?.error ? `: ${r.json.error}` : ""}). 리스 화면의 '외부 변경 검토'에서 받아들여 주세요`, after);
       }
       const left = await conn.pending().catch(() => null);
-      return { ok: true, host: "risubard", file: f.rel, snapshot: snap, results, adopted, reload, stillPending: Boolean(left), needsReload: true };
+      lap("final");
+      tm.total = Date.now() - T0;
+      log(`플러그인 ${label} 걸린 시간(ms): ${JSON.stringify(tm)}`);
+      return { ok: true, host: "risubard", file: f.rel, snapshot: snap, results, adopted, reload, stillPending: Boolean(left), needsReload: true, timing: tm };
     });
   }
 
