@@ -2,6 +2,8 @@
 
 플러그인 [Dusk Atelier](https://github.com/Pyser08/Dusk-Atelier)의 백그라운드 서버. 작업 규칙은 Dusk-Atelier의 `HandOff/README.md`를 따른다(버전·브랜치·main은 사용자 지시가 있을 때만, 버그는 실패 시험 먼저, 끝낼 때 시험 통과 확인, 이 파일 갱신).
 
+- 작업 브랜치는 Atelier main의 `HandOff/README.md` '현재 작업 브랜치' 표가 기준이다. 브랜치가 바뀌면 그 표를 고친다.
+
 ## 원칙
 - 선택 기능: Cellar가 없어도 플러그인은 지금처럼 동작해야 한다.
 - 리스 프로세스에 섞지 않는다. 실행기(`cellar-start.cjs`)가 리스와 Cellar를 따로 켠다.
