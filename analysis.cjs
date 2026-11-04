@@ -73,7 +73,7 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
     const botState = req.bot && typeof req.bot === "object" ? req.bot : {};
     const names = Array.isArray(req.userNames) ? req.userNames.map(String).filter(Boolean).slice(0, 20) : [];
     const rx = Array.isArray(req.regex) ? req.regex : [];
-    const range = { from: Number(req.range?.from) || 0, to: Number.isFinite(Number(req.range?.to)) ? Number(req.range.to) : Infinity, ...(req.range?.all ? { all: true } : {}) };
+    const range = { from: Number(req.range?.from) || 0, to: req.range?.to != null && Number.isFinite(Number(req.range.to)) ? Number(req.range.to) : Infinity, ...(req.range?.all ? { all: true } : {}) };
     const j = job = { id: `a${++seq}-${Date.now().toString(36)}`, state: "running", total: 0, done: 0, failed: 0, reasons: [], startedAt: Date.now(), chaId, chatId };
     ctrl = new AbortController();
     run(j, { chaId, chatId, messages, settings, botState, names, rx, range, call, charName: String(req.charName ?? "").slice(0, 160), chatName: String(req.chatName ?? "").slice(0, 160), prompts: req.prompts ?? null, redo: Boolean(req.redo), retryMs: Number(req.retryMs) >= 0 ? Number(req.retryMs) : 2000 }, ctrl.signal)

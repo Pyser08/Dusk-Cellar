@@ -94,9 +94,10 @@
   - start 입력: `chaId·chatId·charName·chatName·messages[]`(분석에 필요한 필드만 남김) · `settings`(플러그인 index.settings) · `bot`(on·ignore) · `userNames[]` · `regex[]`(전처리 규칙 사본) · `prompts`(내 프롬프트 설정, 없으면 null) · `range{from,to,all}` · `redo` · `model{kind:"openai"|"anthropic", url, key, model, maxTokens?, temperature?, headers?}`.
   - 인덱스(설정·봇 목록)는 요청에 실린 것을 작업 안에서만 쓰고(저장 안 함), 기억 폴더(`dusk.mem.v3.f.*`)만 Cellar 저장소에 쓴다. 쓰기는 baseRev로 충돌을 막고, 충돌이면 "busy"로 보고 러너의 일시 오류 재시도를 탄다.
   - 모델 키는 작업 중 메모리에만 두고 상태·로그에 안 담는다. 상태: `job{id,state(running|done|error|cancelled),total,done,failed,reasons,result{folder,bots,status}}`. result는 플러그인이 자기 인덱스(폴더 요약 counts·bots)를 갱신할 때 쓴다.
+- 엔진 파일은 Atelier 분석 코드가 바뀔 때마다 다시 빌드해 커밋해야 함(Atelier 1.9.3 연결 시점 기준으로 빌드됨).
 - 시험: `tests/analysis.test.js` 7개(가짜 모델 서버로 OpenAI·Anthropic 형식, 건너뛰기·redo, 실패·취소·409·400, 엔진 없음 501) + 통합 상태 1개. Cellar 107 통과.
 - **아직 안 한 것:**
   1. **호스트 파일에서 채팅 직접 읽기**(RisuBard → PocketRisu → 원본). 이 환경에서 RisuBard 소스를 열 수 없어 채팅 저장 형식을 확인하지 못함. 지금은 플러그인이 채팅 메시지를 보내는 방식(모든 호스트에서 동작). 호스트 읽기가 생기면 start 입력에서 messages를 빼고 chaId·chatId만 받도록 확장.
-  2. **Atelier 플러그인 쪽 연결:** 서버가 `analysis`를 알리면 '지난 대화 분석'이 start를 부르고 status를 폴링해 진행률만 보여 주기, 끝나면 result로 자기 인덱스 갱신, 서버 오류·끊김이면 지금 방식으로 대체, 설정 모델이 '리스 보조 모델'(서버가 못 부름)이면 서버 분석 불가 안내.
+  2. ~~Atelier 플러그인 쪽 연결~~ **완료(2026-11-04, Atelier feat/1.9.3):** 기억이 서버 모드·Cellar가 `analysis` 기능을 알림·모델이 서버에서 부를 수 있는 종류(Claude·OpenAI·OpenRouter·Ollama·Custom, 추론 모델·추가 요청 설정 제외)일 때만 서버로 보내고, 아니면 기기 방식. 시작 전 실패·501은 기기 방식으로 대체, 시작한 뒤 연결이 끊기면(상태 6번 실패) 오류로 알림(서버는 계속 돌 수 있음). 설정 스위치 `serverAnalysis`(기본 켬). 끝나면 플러그인이 캐시를 비우고 인덱스 요약을 맞춤.
   3. 실제 서버(RisuBard·PocketRisu·리스AI) 확인, 분석 중 사용자가 같은 채팅에서 대화할 때의 폴더 충돌 실측.
   4. 자동 기록(응답마다)은 서버로 안 보냄(지난 대화 분석만).

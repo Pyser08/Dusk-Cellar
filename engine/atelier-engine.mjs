@@ -2166,7 +2166,7 @@ var MAX_FAILS = 5;
 var confirmOf = (idx) => idx?.settings?.confirm === "now" ? "now" : "next";
 var TRANSIENT = /429|rate.?limit|too many|timeout|timed out|overload|busy|unavailable|\b5\d\d\b|ECONN|network|fetch failed|failed to fetch/i;
 function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnalyze = null, log = (...a) => console.log("[Dusk \uAE30\uC5B5]", ...a), notify = () => {
-}, retryMs = 2e3, call = null, link = null, gauge = null } = {}) {
+}, retryMs = 2e3, call = null, link = null, server = null, gauge = null } = {}) {
   let timer = null, dirty = false, running = false, started = false;
   let session = { calls: 0, hooks: 0, displays: 0, hookAt: 0, tick: null };
   const lastTried = /* @__PURE__ */ new Map();
@@ -2469,6 +2469,33 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
     const folder = await store.getFolder(String(character.chaId), String(chat.id ?? chatIndex));
     const { groups } = planBackfill(chat.message ?? [], { ...range, all: redo }, folder);
     if (groups.length && isChatGenerating(character)) throw new Error("\uC751\uB2F5\uC744 \uC0DD\uC131\uD558\uB294 \uC911\uC774\uC5D0\uC694. \uB05D\uB09C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
+    if (server && groups.length && (await store.getIndex()).settings?.serverAnalysis !== false) {
+      const idx = await store.getIndex(), chaId = String(character.chaId), chatId = String(chat.id ?? chatIndex);
+      const prep0 = await server.prepare(modelOf(idx.settings));
+      if (prep0) {
+        const out = await server.run(prep0, {
+          chaId,
+          chatId,
+          charName: character.name,
+          chatName: chat.name ?? chat.chatName ?? "",
+          messages: server.slim(chat.message ?? []),
+          settings: idx.settings,
+          bot: { ...idx.bots[chaId] ?? {}, paused: false },
+          userNames: await userNames(),
+          regex: prep ? await prep.entriesFor(character, chat) : [],
+          prompts: await prompts?.().catch(() => null) ?? null,
+          range: { from: range?.from ?? 0, to: Number.isFinite(range?.to) ? range.to : null, all: redo },
+          redo
+        }, { signal, onProgress });
+        if (out) {
+          store.dropCache?.();
+          await store.updateFolder(chaId, chatId, () => {
+          }).catch(() => {
+          });
+          return out;
+        }
+      }
+    }
     const shared = { character, chat };
     const failed = [], reasons = [];
     let n = 0;
@@ -2534,6 +2561,7 @@ var LEGACY_KEY = "dusk.episodic-memory.v1";
 var DEFAULT_SETTINGS = Object.freeze({
   autoRecord: true,
   staged: true,
+  serverAnalysis: true,
   confirm: "next",
   startTurn: 1,
   debounceSec: 4,
