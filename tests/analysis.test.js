@@ -128,3 +128,32 @@ test("요청 본문: 추가 JSON·추론 설정·OpenRouter·OpenAI 추론 모�
   await call({ kind: "anthropic", url: "https://a.example/v1/messages", key: "ak", extraBody: { thinking: { type: "disabled" } } });
   assert.equal(bodies[4].body.max_tokens, 4096); assert.equal(bodies[4].body.system, "S"); assert.deepEqual(bodies[4].body.thinking, { type: "disabled" }); assert.equal(bodies[4].headers["x-api-key"], "ak");
 });
+
+test("중계 모드: 서버가 모델을 부르지 않고 플러그인이 호출을 가져가 결과를 돌려준다", async () => {
+  const { mem, a } = mk();
+  a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, model: { kind: "relay" } });
+  let handled = 0;
+  for (let i = 0; i < 200 && a.status().job.state === "running"; i++) {
+    const { calls = [] } = a.status({ claim: true });
+    for (const c of calls) { assert.ok(Array.isArray(c.messages) && c.messages.length); assert.equal(a.relayResult({ callId: c.id, text: GOOD }).accepted, true); handled++; }
+    assert.deepEqual(a.status({ claim: true }).calls, [], "이미 가져간 요청은 다시 주지 않아요");
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  const j = a.status().job;
+  assert.equal(j.state, "done", j.error); assert.ok(handled >= 1);
+  const ks = mem.list("dusk.mem.v3.f."); assert.ok(JSON.parse(mem.get(ks[0].key).value).people["미나"]);
+  assert.equal(a.relayResult({ callId: "k999", text: "x" }).accepted, false);
+});
+
+test("중계 모드: 플러그인이 오류를 돌려주면 실패로 세고, 답이 없으면 시간 초과, 취소하면 멈춘다", async () => {
+  const { a } = mk();
+  a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, retryMs: 1, model: { kind: "relay", relayWaitSec: 0.05 } });
+  const j = await waitDone(a);   // 아무도 가져가지 않아 timeout → 실패로 센다
+  assert.equal(j.state, "done"); assert.equal(j.failed, 1); assert.match(j.reasons[0], /timeout/);
+  const b = mk().a;
+  b.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, model: { kind: "relay" } });
+  await new Promise((r) => setTimeout(r, 30)); b.cancel();
+  const k = await waitDone(b); assert.ok(["cancelled", "done"].includes(k.state));
+  assert.equal(a.relayResult({}).accepted, false, "끝난 작업에 늦게 온 결과는 무시");
+  const c = mk().a; assert.throws(() => c.relayResult({}), (e) => e.status === 409);
+});

@@ -101,3 +101,8 @@
   2. ~~Atelier 플러그인 쪽 연결~~ **완료(2026-11-04, Atelier feat/1.9.3):** 기억이 서버 모드·Cellar가 `analysis` 기능을 알림·모델이 서버에서 부를 수 있는 종류(Claude·OpenAI·OpenRouter·DeepSeek·Ollama·Custom. 추가 JSON·추론 설정·OpenAI 추론 모델·DeepSeek 사고 끄기는 `model.extraBody·extraHeaders·reasoningEffort·openrouter·openaiReasoning`로 받아 `analysis.cjs`가 llm-client.js와 같은 규칙으로 본문을 만듦. 리스 보조 모델·Google·Vertex·Copilot은 기기)일 때만 서버로 보내고, 아니면 기기 방식. 시작 전 실패·501은 기기 방식으로 대체, 시작한 뒤 연결이 끊기면(상태 6번 실패) 오류로 알림(서버는 계속 돌 수 있음). 설정 스위치 `serverAnalysis`(기본 켬). 끝나면 플러그인이 캐시를 비우고 인덱스 요약을 맞춤.
   3. 실제 서버(RisuBard·PocketRisu·리스AI) 확인, 분석 중 사용자가 같은 채팅에서 대화할 때의 폴더 충돌 실측.
   4. 자동 기록(응답마다)은 서버로 안 보냄(지난 대화 분석만).
+
+### 중계 모드 (2026-11-04, 사용자 제안)
+- 직접 못 부르는 모델(리스 보조·Google·Vertex·Copilot 등)은 `model:{kind:"relay"}`로 시작: 서버가 분석을 돌리다 모델 호출이 필요하면 요청을 큐에 쌓고(`createRelay`), 플러그인이 `status {claim:true}`로 가져가(`calls[]`, 한 번 준 건 다시 안 줌) 기존 인증 방식 그대로 호출한 뒤 `result {callId,text|error}`로 돌려준다. 키는 서버에 안 간다. features `analysis-relay`.
+- 한계: 플러그인 창(탭)이 살아 있어야 한다(절전·백그라운드면 relayWaitSec(기본 900초) 뒤 timeout → 러너가 일시 오류로 재시도). 직접 호출 가능한 모델은 직접 호출을 우선(창이 꺼져도 진행).
+- 시험: tests/analysis.test.js 중계 2개(Cellar 110 통과). 실제 서버 미확인.

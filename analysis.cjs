@@ -59,6 +59,29 @@ function createModelCall(model, fetchImpl) {
   };
 }
 
+// 중계 호출: 모델 호출을 서버가 직접 하지 않고 플러그인에게 맡긴다(플러그인이 리스 보조 모델·Google·Vertex·Copilot 등 기존 인증 방식 그대로 호출).
+// 서버는 요청을 큐에 쌓고, 플러그인이 status로 가져가(claim) 결과를 result로 돌려줄 때까지 기다린다. 오래 답이 없으면 실패(러너가 일시 오류로 다시 시도).
+function createRelay(waitSec = 900) {
+  const pending = new Map(); let seq = 0;
+  const call = (messages, pick, signal) => new Promise((resolve, reject) => {
+    const id = `k${++seq}`, ent = { id, messages, pick: { timeoutSec: pick?.timeoutSec }, claimed: false };
+    const t = setTimeout(() => { pending.delete(id); reject(new Error(`플러그인 응답 timeout (${waitSec}초). 플러그인 창이 꺼졌거나 절전 중일 수 있어요`)); }, waitSec * 1000);
+    const done = (fn, v) => { clearTimeout(t); pending.delete(id); signal?.removeEventListener?.("abort", onAbort); fn(v); };
+    const onAbort = () => done(reject, new Error("AI 작업을 취소했어요."));
+    signal?.addEventListener?.("abort", onAbort);
+    ent.resolve = (text) => done(resolve, text); ent.reject = (e) => done(reject, e);
+    pending.set(id, ent);
+  });
+  // 아직 가져가지 않은 요청을 내주고 '가져감'으로 표시한다
+  const claim = () => { const out = []; for (const e of pending.values()) if (!e.claimed) { e.claimed = true; out.push({ id: e.id, messages: e.messages, pick: e.pick }); } return out; };
+  const result = (id, { text, error }) => {
+    const e = pending.get(String(id)); if (!e) return false;
+    if (typeof text === "string" && text.trim()) e.resolve(text); else e.reject(new Error(String(error || "플러그인이 빈 응답을 보냈어요").slice(0, 300)));
+    return true;
+  };
+  return { call, claim, result };
+}
+
 function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atelier-engine.mjs"), fetchImpl = globalThis.fetch, log = () => {}, loadEngine = null }) {
   let engine = null;
   const available = () => Boolean(loadEngine) || fs.existsSync(engineFile);
@@ -66,7 +89,9 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
   let job = null, ctrl = null, seq = 0;
 
   const publicJob = (j) => j && { id: j.id, state: j.state, total: j.total, done: j.done, failed: j.failed, reasons: j.reasons, startedAt: j.startedAt, finishedAt: j.finishedAt ?? null, error: j.error ?? null, chaId: j.chaId, chatId: j.chatId, ...(j.result ? { result: j.result } : {}) };
-  const status = () => ({ available: available(), job: publicJob(job) });
+  // claim: 중계 모드에서 플러그인이 해 줄 모델 호출을 같이 내준다(한 번 내준 요청은 다시 안 준다)
+  const status = ({ claim = false } = {}) => ({ available: available(), job: publicJob(job), ...(claim && job?.relay ? { calls: job.relay.claim() } : {}) });
+  const relayResult = (b) => { if (!job?.relay) throw fail(409, "중계 분석 중이 아니에요"); return { ok: true, accepted: job.relay.result(b?.callId, { text: b?.text, error: b?.error }) }; };
 
   async function start(req) {
     if (!available()) throw fail(501, "분석 엔진 파일(engine/atelier-engine.mjs)이 없어요. Cellar를 업데이트해 주세요");
@@ -75,14 +100,15 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
     if (!chaId || !chatId) throw fail(400, "chaId·chatId가 필요해요");
     if (!Array.isArray(req.messages) || !req.messages.length) throw fail(400, "messages가 비었어요");
     if (req.messages.length > MAX_MESSAGES) throw fail(413, "메시지가 너무 많아요");
-    const call = createModelCall(req.model, fetchImpl);
+    const relay = req.model?.kind === "relay" ? createRelay(Number(req.model.relayWaitSec) > 0 ? Number(req.model.relayWaitSec) : 900) : null;
+    const call = relay ? relay.call : createModelCall(req.model, fetchImpl);
     const messages = req.messages.map(slimMessage);
     const settings = req.settings && typeof req.settings === "object" ? req.settings : {};
     const botState = req.bot && typeof req.bot === "object" ? req.bot : {};
     const names = Array.isArray(req.userNames) ? req.userNames.map(String).filter(Boolean).slice(0, 20) : [];
     const rx = Array.isArray(req.regex) ? req.regex : [];
     const range = { from: Number(req.range?.from) || 0, to: req.range?.to != null && Number.isFinite(Number(req.range.to)) ? Number(req.range.to) : Infinity, ...(req.range?.all ? { all: true } : {}) };
-    const j = job = { id: `a${++seq}-${Date.now().toString(36)}`, state: "running", total: 0, done: 0, failed: 0, reasons: [], startedAt: Date.now(), chaId, chatId };
+    const j = job = { relay, id: `a${++seq}-${Date.now().toString(36)}`, state: "running", total: 0, done: 0, failed: 0, reasons: [], startedAt: Date.now(), chaId, chatId };
     ctrl = new AbortController();
     run(j, { chaId, chatId, messages, settings, botState, names, rx, range, call, charName: String(req.charName ?? "").slice(0, 160), chatName: String(req.chatName ?? "").slice(0, 160), prompts: req.prompts ?? null, redo: Boolean(req.redo), retryMs: Number(req.retryMs) >= 0 ? Number(req.retryMs) : 2000 }, ctrl.signal)
       .catch((e) => { j.state = "error"; j.error = String(e?.message ?? e).slice(0, 300); j.finishedAt = Date.now(); log(`분석 실패: ${j.error}`); });
@@ -134,6 +160,6 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
   }
 
   function cancel() { if (job?.state === "running") { ctrl?.abort(); return { ok: true, cancelling: true }; } return { ok: true, cancelling: false }; }
-  return { available, status, start, cancel };
+  return { available, status, start, cancel, relayResult };
 }
-module.exports = { createAnalysis, createModelCall, slimMessage };
+module.exports = { createAnalysis, createModelCall, createRelay, slimMessage };

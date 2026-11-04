@@ -98,7 +98,7 @@ if (flag("--role-server")) {
   const analysis = createAnalysis({ mem, log });
   const { createUpdate } = require("./update.cjs");
   const updater = createUpdate({ root: __dirname, dataDir, log });
-  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : []), ...(analysis.available() ? ["analysis"] : [])];
+  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : []), ...(analysis.available() ? ["analysis", "analysis-relay"] : [])];
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
   const readJson = (req, max = MAX_VALUE) => new Promise((resolve, reject) => {
     const limit = max + 64 * 1024;
@@ -188,7 +188,8 @@ if (flag("--role-server")) {
       }
       if (url.pathname === "/cellar/analysis" && req.method === "POST") {
         const b = await readJson(req, 48 * 1024 * 1024);
-        if (b.action === "status") return send(res, 200, { ok: true, ...analysis.status() });
+        if (b.action === "status") return send(res, 200, { ok: true, ...analysis.status({ claim: b.claim === true }) });
+        if (b.action === "result") return send(res, 200, analysis.relayResult(b));
         if (b.action === "start") return send(res, 200, { ok: true, job: await analysis.start(b) });
         if (b.action === "cancel") return send(res, 200, analysis.cancel());
         return send(res, 400, { ok: false, error: "action은 status·start·cancel이에요" });

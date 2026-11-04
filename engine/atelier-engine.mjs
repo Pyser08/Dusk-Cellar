@@ -2486,7 +2486,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
           prompts: await prompts?.().catch(() => null) ?? null,
           range: { from: range?.from ?? 0, to: Number.isFinite(range?.to) ? range.to : null, all: redo },
           redo
-        }, { signal, onProgress });
+        }, { signal, onProgress, relay: (msgs, pick) => run(msgs, { ...modelOf(idx.settings), noUserPrompts: true, ...pick?.timeoutSec ? { timeoutSec: pick.timeoutSec } : {} }, signal) });
         if (out) {
           store.dropCache?.();
           await store.updateFolder(chaId, chatId, () => {
