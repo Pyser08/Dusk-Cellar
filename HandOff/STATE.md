@@ -107,3 +107,8 @@
 - **플러그인이 없어도 실패하지 않는다:** 요청은 가져갈 때까지(또는 가져간 뒤 모델 제한시간+60초까지) 기다리고, job 상태에 `relay:true, waiting`(15초 넘게 대기)을 알린다. 리스 화면이 다시 열리면 플러그인이 status로 이어받는다(Atelier `resumeServer`). 필요하면 start에 `model.relayWaitSec`을 줘서 그 시간 뒤 실패로 볼 수 있다. Cellar를 재시작하면 대기 작업은 사라진다(기억 폴더는 이미 쓴 그룹까지 저장돼 있어 '지난 대화 분석'을 다시 누르면 남은 것만 한다).
 - 한계: 리스 보조 모델·Vertex·Copilot은 서버가 직접 못 부르니 '리스 화면이 열려 있는 동안'만 진행된다. 완전히 화면 없이 돌리려면 서버가 그 인증·요청 방식을 구현해야 한다(리스 서버에는 모델 호출 주소가 없고 호출은 브라우저 코드가 한다; Vertex는 서비스 계정 JWT·Copilot은 GitHub 토큰 교환이 필요 — 아직 안 함, 실제 계정 없이는 시험 불가).
 - 시험: tests/analysis.test.js 중계 4개 포함(Cellar 112 통과). 실제 서버 미확인.
+
+## 서버 분석 — 직접 호출·안정성 (0.1.1)
+- start.model.kind `preset`: Atelier의 `callWriterModel`(llm-client)을 그대로 실행(Vertex JWT·Copilot·Google·추론·추가 JSON). 플러그인 설정 '서버 분석에 쓸 모델'로 고른 '내 API' 프리셋만 해당 → 리스 화면 없이 끝까지 진행(백그라운드 안전). 리스 쪽 모델은 relay(화면 필요, 대기/재개).
+- 기억 손실 방지: `store.updateFolder` 충돌(busy)시 모델 재호출 없이 새 폴더에 결과 재적용(최대 12회), 시작 전 폴더 사본 `dataDir/analysis-backups/<jobid>.json`(최근 5개).
+- 시험: 동시 쓰기(서버 충돌 ≥1 확인)·취소 후 재시작·백업·Vertex JWT·preset 400. 미확인: 실제 서버·iOS·실제 Vertex/Copilot 계정.

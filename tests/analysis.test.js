@@ -177,3 +177,116 @@ test("createRelay: 가져간 뒤 오래 답이 없으면 다시 내주고, 대�
   t += 60e3; assert.equal(r.claim().length, 0, "아직 제한시간+60초 전이에요");
   t += 20e3; assert.equal(r.waiting(), true); assert.equal(r.claim().length, 1, "오래 지나면 다시 내줘요");
 });
+
+// ── 프리셋 호출(플러그인과 같은 모델 호출 코드) ──
+const crypto = require("node:crypto");
+const PRESET = { provider: "custom", baseUrl: "https://fake.test/v1", model: "m", temperature: 0.5, maxTokens: 512, timeoutSeconds: 30, contextWindow: 10, reasoningQuickSetting: "default", extraBodyJson: "", receiveContextAsPdf: false, vertexPaygoTier: "default" };
+const resp = (json, status = 200) => ({ ok: status < 300, status, json: async () => json, text: async () => JSON.stringify(json) });
+const mkWith = (fetchImpl, extra = {}) => { const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cellar-an-")); const mem = createStore({ dir }); return { dir, mem, a: createAnalysis({ mem, fetchImpl, ...extra }) }; };
+
+test("프리셋 호출: custom 모델을 플러그인과 같은 코드로 부르고 키·추가 JSON이 반영된다", async () => {
+  const seen = [];
+  const fetchImpl = async (url, init) => { seen.push({ url, init, body: JSON.parse(init.body) }); return resp({ choices: [{ message: { content: GOOD } }] }); };
+  const { mem, a } = mkWith(fetchImpl);
+  await a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, model: { kind: "preset", preset: { ...PRESET, extraBodyJson: '{"top_p":0.3}' }, key: "sk-live" } });
+  const j = await waitDone(a); assert.equal(j.state, "done", j.error); assert.equal(j.failed, 0);
+  assert.equal(seen[0].url, "https://fake.test/v1/chat/completions");
+  assert.equal(seen[0].init.headers.authorization, "Bearer sk-live"); assert.equal(seen[0].body.top_p, 0.3); assert.equal(seen[0].body.model, "m");
+  assert.ok(JSON.parse(mem.get(mem.list("dusk.mem.v3.f.")[0].key).value).people["미나"]);
+  assert.equal(JSON.stringify(a.status()).includes("sk-live"), false);
+});
+
+test("프리셋 호출: Vertex 서비스 계정 서명(JWT)·토큰 교환·Bearer 호출이 서버에서도 된다", async () => {
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+  const account = { type: "service_account", project_id: "my-proj", client_email: "sa@my-proj.iam.gserviceaccount.com", private_key: privateKey.export({ type: "pkcs8", format: "pem" }) };
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    calls.push(url);
+    if (url.startsWith("https://oauth2.googleapis.com/token")) {
+      const assertion = new URLSearchParams(init.body).get("assertion"), [h, c, sig] = assertion.split(".");
+      assert.ok(crypto.verify("RSA-SHA256", Buffer.from(h + "." + c), publicKey, Buffer.from(sig, "base64url")), "JWT 서명이 맞아야 해요");
+      assert.equal(JSON.parse(Buffer.from(c, "base64url")).iss, account.client_email);
+      return resp({ access_token: "ya29.tok", token_type: "Bearer", expires_in: 3600 });
+    }
+    assert.match(url, /^https:\/\/[a-z-]*aiplatform\.googleapis\.com\//); assert.equal(init.headers.authorization, "Bearer ya29.tok");
+    return resp({ candidates: [{ content: { parts: [{ text: GOOD }] }, finishReason: "STOP" }] });
+  };
+  const { mem, a } = mkWith(fetchImpl);
+  await a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, model: { kind: "preset", key: JSON.stringify(account), preset: { ...PRESET, provider: "vertex-ai", baseUrl: "https://aiplatform.googleapis.com/v1/projects/PROJECT_ID/locations/global/endpoints/openapi", model: "gemini-2.5-flash" } } });
+  const j = await waitDone(a); assert.equal(j.state, "done", j.error); assert.equal(j.failed, 0, j.reasons.join("|"));
+  assert.equal(calls.filter((u) => u.startsWith("https://oauth2")).length, 1, "토큰은 한 번만 받아 재사용");
+  assert.ok(JSON.parse(mem.get(mem.list("dusk.mem.v3.f.")[0].key).value).people["미나"]);
+});
+
+test("프리셋 호출: 리스 보조 모델 프리셋·주소 없는 프리셋은 400", async () => {
+  const { a } = mkWith(async () => resp({}));
+  await assert.rejects(async () => a.start({ chaId: "c", chatId: "t", messages: msgs(), model: { kind: "preset", preset: { ...PRESET, provider: "risuai" }, key: "" } }), (e) => e.status === 400);
+  await assert.rejects(async () => a.start({ chaId: "c", chatId: "t", messages: msgs(), model: { kind: "preset", preset: { ...PRESET, baseUrl: "" }, key: "" } }), (e) => e.status === 400);
+});
+
+// ── 기억 손실 방지 ──
+const manyMsgs = (n) => { const o = []; for (let i = 0; i < n; i++) { o.push({ role: "user", data: `입력 ${i}` }); o.push({ role: "char", data: `${LONG} 응답 번호 ${i}`, chatId: `m${i}` }); } return o; };
+const personFor = (k) => JSON.stringify({ people: [{ name: `인물${k}`, act: `행동 ${k}`, p: 2, s: 2, r: 2 }], scene: { sum: `장면 ${k}`, facts: [`사실 ${k}`], place: "곳", who: [`인물${k}`], changed: true } });
+
+test("동시 쓰기: 서버 분석 중 플러그인이 같은 폴더를 계속 바꿔도 양쪽 기록이 모두 남는다(중복 없음)", async () => {
+  let n = 0;
+  const fetchImpl = async () => { await new Promise((r) => setTimeout(r, 12)); return resp({ choices: [{ message: { content: personFor(++n) } }] }); };
+  const { mem, a } = mkWith(fetchImpl);
+  const put0 = mem.put; let conflicts = 0;   // 서버 쪽 쓰기가 실제로 충돌했는지 센다
+  mem.put = (...x) => { try { return put0(...x); } catch (e) { if (e.conflict) conflicts++; throw e; } };
+  await a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: manyMsgs(14), settings: { staged: false }, retryMs: 1, model: { kind: "preset", preset: PRESET, key: "k" } });
+  // 플러그인 흉내: baseRev로 읽고-고치고-쓰기, 충돌이면 다시 읽어 합쳐서 쓰기(실제 플러그인의 pushKey와 같은 순서)
+  let ext = 0, stop = false;
+  const writer = (async () => {
+    while (!stop) {
+      const ks = mem.list("dusk.mem.v3.f.");
+      if (ks.length) {
+        for (let tries = 0; tries < 20; tries++) {
+          const g = mem.get(ks[0].key), f = JSON.parse(g.value);
+          f.people[`외부${ext}`] = { name: `외부${ext}`, aliases: [], pinned: false, records: [{ id: `x${ext}`, act: "외부 기록", at: 0, g: "B" }] };
+          try { mem.put(ks[0].key, JSON.stringify(f), { baseRev: g.rev }); ext++; break; } catch (e) { if (!e.conflict) throw e; }
+        }
+      }
+      await new Promise((r) => setTimeout(r, 3));
+    }
+  })();
+  const j = await waitDone(a); stop = true; await writer;
+  assert.equal(j.state, "done", j.error); assert.equal(j.failed, 0, j.reasons.join("|"));
+  const f = JSON.parse(mem.get(mem.list("dusk.mem.v3.f.")[0].key).value);
+  const server = Object.keys(f.people).filter((k) => /^인물\d+$/.test(k)), external = Object.keys(f.people).filter((k) => /^외부\d+$/.test(k));
+  assert.equal(server.length, n, `서버가 만든 기록이 모두 남아야 해요(모델 호출 ${n}번, 남은 ${server.length})`);
+  assert.equal(external.length, ext, "플러그인이 쓴 기록도 하나도 안 사라져야 해요");
+  assert.ok(ext >= 3 && conflicts >= 1, "시험이 실제로 겹쳤어요(외부 쓰기 " + ext + "번, 충돌 " + conflicts + "번)");
+  for (const k of server) assert.equal(f.people[k].records.length, 1, `${k} 기록이 중복되면 안 돼요`);
+});
+
+test("취소 후 다시 시작하면 남은 것만 분석하고 기존 기록은 그대로다(중복·손실 없음)", async () => {
+  let n = 0, gate = null;
+  const fetchImpl = async () => { if (gate) await gate; return resp({ choices: [{ message: { content: personFor(++n) } }] }); };
+  const { mem, a } = mkWith(fetchImpl);
+  const req = { chaId: "c1", chatId: "t1", charName: "봇", messages: manyMsgs(10), settings: { staged: false }, retryMs: 1, model: { kind: "preset", preset: PRESET, key: "k" } };
+  await a.start(req);
+  for (let i = 0; i < 400 && n < 2; i++) await new Promise((r) => setTimeout(r, 5));
+  a.cancel(); const j1 = await waitDone(a); assert.ok(["cancelled", "done"].includes(j1.state));
+  const keyOf = () => mem.list("dusk.mem.v3.f.")[0].key, before = JSON.parse(mem.get(keyOf()).value), had = Object.keys(before.people).filter((k) => /^인물\d+$/.test(k)).length;
+  assert.ok(had >= 1);
+  await a.start(req); const j2 = await waitDone(a); assert.equal(j2.state, "done", j2.error); assert.equal(j2.failed, 0);
+  const after = JSON.parse(mem.get(keyOf()).value), names = Object.keys(after.people).filter((k) => /^인물\d+$/.test(k));
+  for (const k of Object.keys(before.people)) assert.ok(after.people[k], `${k}가 사라졌어요`);
+  assert.equal(names.length, n, "모델이 만든 기록이 하나도 안 사라지고 중복도 없어요");
+  for (const k of names) assert.equal(after.people[k].records.length, 1);
+  const total = after.done?.length ?? 0; assert.ok(total >= 10, "모든 응답이 분석 완료로 표시돼요");
+});
+
+test("분석 전 폴더 백업이 남고(최근 5개) 쓸 수 있다", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "cellar-bk-"));
+  let n = 0;
+  const { mem, a } = mkWith(async () => resp({ choices: [{ message: { content: personFor(++n) } }] }), { backupDir: dir });
+  const req = { chaId: "c1", chatId: "t1", charName: "봇", messages: manyMsgs(2), settings: { staged: false }, retryMs: 1, model: { kind: "preset", preset: PRESET, key: "k" } };
+  await a.start(req); await waitDone(a);
+  assert.equal(fs.readdirSync(dir).length, 0, "처음에는 백업할 폴더가 없어요");
+  for (let i = 0; i < 7; i++) { await a.start({ ...req, redo: true, range: { all: true } }); await waitDone(a); }
+  const files = fs.readdirSync(dir).sort(); assert.equal(files.length, 5);
+  const b = JSON.parse(fs.readFileSync(path.join(dir, files.at(-1)), "utf8"));
+  assert.ok(b.key.startsWith("dusk.mem.v3.f.") && typeof b.value === "string" && JSON.parse(b.value).people);
+});

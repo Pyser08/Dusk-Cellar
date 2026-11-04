@@ -86,7 +86,19 @@ function createRelay({ maxWaitSec = 0, now = () => Date.now() } = {}) {
   return { call, claim, result, waiting };
 }
 
-function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atelier-engine.mjs"), fetchImpl = globalThis.fetch, log = () => {}, loadEngine = null }) {
+// 프리셋 호출: 플러그인과 같은 모델 호출 코드(Atelier llm-client.js를 묶은 엔진의 callWriterModel)를 그대로 쓴다.
+// 그래서 Vertex(서비스 계정 서명)·Copilot(토큰 교환)·Google·추론 설정·추가 JSON이 기기와 똑같이 동작한다. 키는 요청에 실려 오고 이 작업 동안만 메모리에 둔다.
+function createPresetCall(E, spec, fetchImpl) {
+  const preset = spec.preset, key = typeof spec.key === "string" ? spec.key : "";
+  const keyStore = { has: () => Boolean(key), use: async (_p, cb) => { if (!key) throw new Error("서버에 모델 API 키가 전달되지 않았어요"); return cb(key); } };   // 한 작업 동안 같은 객체(Copilot 토큰 캐시가 이 객체에 붙는다)
+  const api = { nativeFetch: (u, init) => fetchImpl(u, init) };
+  return async (messages, pick, signal) => {
+    const { prompt, wrapped } = E.toPrompt(messages);
+    return E.fromReply(await E.callWriterModel(api, keyStore, preset, prompt, { signal, stageLabel: "AI" }), wrapped);
+  };
+}
+
+function createAnalysis({ mem, backupDir = null, engineFile = path.join(__dirname, "engine", "atelier-engine.mjs"), fetchImpl = globalThis.fetch, log = () => {}, loadEngine = null }) {
   let engine = null;
   const available = () => Boolean(loadEngine) || fs.existsSync(engineFile);
   const load = async () => engine ??= await (loadEngine ? loadEngine() : import(pathToFileURL(engineFile).href));
@@ -105,7 +117,12 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
     if (!Array.isArray(req.messages) || !req.messages.length) throw fail(400, "messages가 비었어요");
     if (req.messages.length > MAX_MESSAGES) throw fail(413, "메시지가 너무 많아요");
     const relay = req.model?.kind === "relay" ? createRelay({ maxWaitSec: Number(req.model.relayWaitSec) > 0 ? Number(req.model.relayWaitSec) : 0 }) : null;
-    const call = relay ? relay.call : createModelCall(req.model, fetchImpl);
+    const isPreset = req.model?.kind === "preset";
+    if (isPreset) {
+      const pr = req.model.preset;
+      if (!pr || typeof pr !== "object" || pr.provider === "risuai" || typeof pr.model !== "string" || !pr.model || typeof pr.baseUrl !== "string" || !pr.baseUrl) throw fail(400, "모델 프리셋이 올바르지 않아요");
+    }
+    const call = relay ? relay.call : isPreset ? null : createModelCall(req.model, fetchImpl);
     const messages = req.messages.map(slimMessage);
     const settings = req.settings && typeof req.settings === "object" ? req.settings : {};
     const botState = req.bot && typeof req.bot === "object" ? req.bot : {};
@@ -114,7 +131,7 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
     const range = { from: Number(req.range?.from) || 0, to: req.range?.to != null && Number.isFinite(Number(req.range.to)) ? Number(req.range.to) : Infinity, ...(req.range?.all ? { all: true } : {}) };
     const j = job = { relay, id: `a${++seq}-${Date.now().toString(36)}`, state: "running", total: 0, done: 0, failed: 0, reasons: [], startedAt: Date.now(), chaId, chatId };
     ctrl = new AbortController();
-    run(j, { chaId, chatId, messages, settings, botState, names, rx, range, call, charName: String(req.charName ?? "").slice(0, 160), chatName: String(req.chatName ?? "").slice(0, 160), prompts: req.prompts ?? null, redo: Boolean(req.redo), retryMs: Number(req.retryMs) >= 0 ? Number(req.retryMs) : 2000 }, ctrl.signal)
+    run(j, { chaId, chatId, messages, settings, botState, names, rx, range, call, spec: isPreset ? req.model : null, charName: String(req.charName ?? "").slice(0, 160), chatName: String(req.chatName ?? "").slice(0, 160), prompts: req.prompts ?? null, redo: Boolean(req.redo), retryMs: Number(req.retryMs) >= 0 ? Number(req.retryMs) : 2000 }, ctrl.signal)
       .catch((e) => { j.state = "error"; j.error = String(e?.message ?? e).slice(0, 300); j.finishedAt = Date.now(); log(`분석 실패: ${j.error}`); });
     return publicJob(j);
   }
@@ -138,6 +155,23 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
       removeItem: async (k) => { if (k !== E.INDEX_KEY) mem.del(k); }
     };
     const store = E.createMemoryStoreV3({}, { storage });
+    // 기억 손실 방지 ① 다른 곳(플러그인)이 같은 폴더를 먼저 바꿔 충돌하면, 모델 호출을 다시 하지 않고 '새로 읽은 폴더에 결과를 다시 적용'한다
+    const baseUpdate = store.updateFolder;
+    store.updateFolder = async (...a) => {
+      for (let i = 0; ; i++) {
+        try { return await baseUpdate(...a); }
+        catch (e) { if (!/^busy:/.test(String(e?.message)) || i >= 12) throw e; store.dropCache(); await new Promise((r) => setTimeout(r, 15 * (i + 1))); }
+      }
+    };
+    // ② 시작 전 폴더 사본을 남긴다(최근 5개). 문제가 생기면 이 파일의 value를 dusk.mem 키에 되돌리면 된다
+    try {
+      const key = E.FOLDER_PREFIX + E.folderIdOf(p.chaId, p.chatId), cur = mem.get(key);
+      if (cur && backupDir) {
+        fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+        fs.writeFileSync(path.join(backupDir, `${j.id}.json`), JSON.stringify({ key, rev: cur.rev, at: Date.now(), value: cur.value }), { mode: 0o600 });
+        const old = fs.readdirSync(backupDir).filter((f) => f.endsWith(".json")).sort(); for (const f of old.slice(0, Math.max(0, old.length - 5))) fs.rmSync(path.join(backupDir, f), { force: true });
+      }
+    } catch (e) { log(`분석 전 백업 실패(계속 진행): ${e.message}`); }
     const indexSeed = { settings: p.settings, bots: { [p.chaId]: { on: true, ignore: [], fails: 0, ...p.botState } } };
     await store.updateIndex((idx) => { Object.assign(idx.settings, p.settings); Object.assign(idx.bots, indexSeed.bots); });
     const character = { chaId: p.chaId, name: p.charName || "캐릭터", chats: [] };
@@ -149,7 +183,7 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
       getDatabase: async () => ({ username: p.names[0], personas: p.names.slice(1).map((name) => ({ name })) })
     };
     const runner = E.createMemoryRunner(api, {
-      store, call: p.call, retryMs: p.retryMs, log: (...a) => log(a.join(" ")),
+      store, call: p.call ?? createPresetCall(E, p.spec, fetchImpl), retryMs: p.retryMs, log: (...a) => log(a.join(" ")),
       prep: { entriesFor: async () => p.rx }, prompts: async () => p.prompts
     });
     const out = await runner.backfill(0, 0, p.range, {

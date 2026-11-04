@@ -95,7 +95,7 @@ if (flag("--role-server")) {
   const { createAssets } = require("./assets.cjs");
   const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, altUrls: altUrls(), log }) : null;
   const { createAnalysis } = require("./analysis.cjs");
-  const analysis = createAnalysis({ mem, log });
+  const analysis = createAnalysis({ mem, log, backupDir: path.join(dataDir, "analysis-backups") });
   const { createUpdate } = require("./update.cjs");
   const updater = createUpdate({ root: __dirname, dataDir, log });
   const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : []), ...(analysis.available() ? ["analysis", "analysis-relay"] : [])];
