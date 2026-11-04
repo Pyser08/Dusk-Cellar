@@ -2464,6 +2464,21 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
     const chars = groups.reduce((n, g) => n + g.reduce((s, i) => s + extractMessageText(messages[i]).length, 0) + 4e3, 0);
     return { groups, calls: groups.length, tokens: Math.round(chars / 1.5), total: ai.length, done: ai.length - todo.length, todo: todo.length, failed: todo.filter((i) => failedSet.has(hOf(i))).length };
   }
+  const relayCall = (settings, signal) => (msgs, pick) => run(msgs, { ...modelOf(settings), noUserPrompts: true, ...pick?.timeoutSec ? { timeoutSec: pick.timeoutSec } : {} }, signal);
+  async function resumeServer({ signal } = {}) {
+    if (!server?.resume) return null;
+    const idx = await store.getIndex();
+    if (idx.settings?.serverAnalysis === false) return null;
+    const out = await server.resume({ relay: relayCall(idx.settings, signal), signal });
+    if (out?.job?.chaId) {
+      store.dropCache?.();
+      await store.updateFolder(String(out.job.chaId), String(out.job.chatId), () => {
+      }).catch(() => {
+      });
+      notify(`\uC11C\uBC84\uC5D0\uC11C \uC774\uC5B4\uC11C \uD55C \uC9C0\uB09C \uB300\uD654 \uBD84\uC11D\uC774 \uB05D\uB0AC\uC5B4\uC694 (${out.total - out.failed.length}/${out.total}).`);
+    }
+    return out;
+  }
   async function backfill(charIndex, chatIndex, range, { signal, onProgress, redo = false } = {}) {
     const chat = await api.getChatFromIndex(charIndex, chatIndex), character = await api.getCharacterFromIndex(charIndex);
     const folder = await store.getFolder(String(character.chaId), String(chat.id ?? chatIndex));
@@ -2486,7 +2501,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
           prompts: await prompts?.().catch(() => null) ?? null,
           range: { from: range?.from ?? 0, to: Number.isFinite(range?.to) ? range.to : null, all: redo },
           redo
-        }, { signal, onProgress, relay: (msgs, pick) => run(msgs, { ...modelOf(idx.settings), noUserPrompts: true, ...pick?.timeoutSec ? { timeoutSec: pick.timeoutSec } : {} }, signal) });
+        }, { signal, onProgress, relay: relayCall(idx.settings, signal) });
         if (out) {
           store.dropCache?.();
           await store.updateFolder(chaId, chatId, () => {
@@ -2547,6 +2562,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
     },
     planBackfill,
     backfill,
+    resumeServer,
     digestIfNeeded,
     session: () => ({ ...session }),
     isStarted: () => started,

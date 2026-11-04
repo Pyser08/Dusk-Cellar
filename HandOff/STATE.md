@@ -102,7 +102,8 @@
   3. 실제 서버(RisuBard·PocketRisu·리스AI) 확인, 분석 중 사용자가 같은 채팅에서 대화할 때의 폴더 충돌 실측.
   4. 자동 기록(응답마다)은 서버로 안 보냄(지난 대화 분석만).
 
-### 중계 모드 (2026-11-04, 사용자 제안)
-- 직접 못 부르는 모델(리스 보조·Google·Vertex·Copilot 등)은 `model:{kind:"relay"}`로 시작: 서버가 분석을 돌리다 모델 호출이 필요하면 요청을 큐에 쌓고(`createRelay`), 플러그인이 `status {claim:true}`로 가져가(`calls[]`, 한 번 준 건 다시 안 줌) 기존 인증 방식 그대로 호출한 뒤 `result {callId,text|error}`로 돌려준다. 키는 서버에 안 간다. features `analysis-relay`.
-- 한계: 플러그인 창(탭)이 살아 있어야 한다(절전·백그라운드면 relayWaitSec(기본 900초) 뒤 timeout → 러너가 일시 오류로 재시도). 직접 호출 가능한 모델은 직접 호출을 우선(창이 꺼져도 진행).
-- 시험: tests/analysis.test.js 중계 2개(Cellar 110 통과). 실제 서버 미확인.
+### 중계 모드 (2026-11-04, 사용자 제안·수정)
+- 직접 못 부르는 모델(리스 보조·Vertex·Copilot)은 `model:{kind:"relay"}`로 시작: 서버가 분석을 돌리다 모델 호출이 필요하면 요청을 큐에 쌓고(`createRelay`), 플러그인이 `status {claim:true}`로 가져가(`calls[]`) 기존 인증 방식 그대로 호출한 뒤 `result {callId,text|error}`로 돌려준다. 키는 서버에 안 간다. features `analysis-relay`. (Google·llmgateway는 OpenAI 호환이라 직접 호출.)
+- **플러그인이 없어도 실패하지 않는다:** 요청은 가져갈 때까지(또는 가져간 뒤 모델 제한시간+60초까지) 기다리고, job 상태에 `relay:true, waiting`(15초 넘게 대기)을 알린다. 리스 화면이 다시 열리면 플러그인이 status로 이어받는다(Atelier `resumeServer`). 필요하면 start에 `model.relayWaitSec`을 줘서 그 시간 뒤 실패로 볼 수 있다. Cellar를 재시작하면 대기 작업은 사라진다(기억 폴더는 이미 쓴 그룹까지 저장돼 있어 '지난 대화 분석'을 다시 누르면 남은 것만 한다).
+- 한계: 리스 보조 모델·Vertex·Copilot은 서버가 직접 못 부르니 '리스 화면이 열려 있는 동안'만 진행된다. 완전히 화면 없이 돌리려면 서버가 그 인증·요청 방식을 구현해야 한다(리스 서버에는 모델 호출 주소가 없고 호출은 브라우저 코드가 한다; Vertex는 서비스 계정 JWT·Copilot은 GitHub 토큰 교환이 필요 — 아직 안 함, 실제 계정 없이는 시험 불가).
+- 시험: tests/analysis.test.js 중계 4개 포함(Cellar 112 통과). 실제 서버 미확인.

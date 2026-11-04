@@ -59,27 +59,31 @@ function createModelCall(model, fetchImpl) {
   };
 }
 
-// 중계 호출: 모델 호출을 서버가 직접 하지 않고 플러그인에게 맡긴다(플러그인이 리스 보조 모델·Google·Vertex·Copilot 등 기존 인증 방식 그대로 호출).
-// 서버는 요청을 큐에 쌓고, 플러그인이 status로 가져가(claim) 결과를 result로 돌려줄 때까지 기다린다. 오래 답이 없으면 실패(러너가 일시 오류로 다시 시도).
-function createRelay(waitSec = 900) {
+// 중계 호출: 모델 호출을 서버가 직접 하지 않고 플러그인에게 맡긴다(플러그인이 리스 보조 모델·Vertex·Copilot 등 기존 인증 방식 그대로 호출).
+// 서버는 요청을 큐에 쌓고, 플러그인이 status로 가져가(claim) 결과를 result로 돌려줄 때까지 기다린다.
+// 플러그인(리스 화면)이 꺼져 있어도 작업은 실패하지 않고 기다린다 — 리스 화면이 다시 열려 status를 부르면 이어서 한다(Cellar가 재시작되지 않는 한).
+// 가져간 뒤 오래(모델 제한시간+60초) 결과가 없으면 다른 요청처럼 다시 내준다(가져간 쪽이 꺼진 경우). maxWaitSec(선택)을 주면 그 시간 뒤 실패로 본다.
+function createRelay({ maxWaitSec = 0, now = () => Date.now() } = {}) {
   const pending = new Map(); let seq = 0;
   const call = (messages, pick, signal) => new Promise((resolve, reject) => {
-    const id = `k${++seq}`, ent = { id, messages, pick: { timeoutSec: pick?.timeoutSec }, claimed: false };
-    const t = setTimeout(() => { pending.delete(id); reject(new Error(`플러그인 응답 timeout (${waitSec}초). 플러그인 창이 꺼졌거나 절전 중일 수 있어요`)); }, waitSec * 1000);
-    const done = (fn, v) => { clearTimeout(t); pending.delete(id); signal?.removeEventListener?.("abort", onAbort); fn(v); };
+    const id = `k${++seq}`, ent = { id, messages, pick: { timeoutSec: pick?.timeoutSec }, claimedAt: 0, at: now() };
+    const t = maxWaitSec > 0 ? setTimeout(() => done(reject, new Error(`플러그인 응답 timeout (${maxWaitSec}초). 리스 화면이 꺼졌거나 절전 중일 수 있어요`)), maxWaitSec * 1000) : null;
+    const done = (fn, v) => { if (t) clearTimeout(t); pending.delete(id); signal?.removeEventListener?.("abort", onAbort); fn(v); };
     const onAbort = () => done(reject, new Error("AI 작업을 취소했어요."));
     signal?.addEventListener?.("abort", onAbort);
     ent.resolve = (text) => done(resolve, text); ent.reject = (e) => done(reject, e);
     pending.set(id, ent);
   });
-  // 아직 가져가지 않은 요청을 내주고 '가져감'으로 표시한다
-  const claim = () => { const out = []; for (const e of pending.values()) if (!e.claimed) { e.claimed = true; out.push({ id: e.id, messages: e.messages, pick: e.pick }); } return out; };
+  const reclaimMs = (e) => ((Number(e.pick.timeoutSec) > 0 ? Number(e.pick.timeoutSec) : 600) + 60) * 1000;
+  const claim = () => { const out = []; for (const e of pending.values()) if (!e.claimedAt || now() - e.claimedAt > reclaimMs(e)) { e.claimedAt = now(); out.push({ id: e.id, messages: e.messages, pick: e.pick }); } return out; };
   const result = (id, { text, error }) => {
     const e = pending.get(String(id)); if (!e) return false;
     if (typeof text === "string" && text.trim()) e.resolve(text); else e.reject(new Error(String(error || "플러그인이 빈 응답을 보냈어요").slice(0, 300)));
     return true;
   };
-  return { call, claim, result };
+  // 가져가길 기다리는 요청이 15초 넘게 있으면 '플러그인을 기다리는 중'
+  const waiting = () => { for (const e of pending.values()) if ((!e.claimedAt || now() - e.claimedAt > reclaimMs(e)) && now() - e.at > 15000) return true; return false; };
+  return { call, claim, result, waiting };
 }
 
 function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atelier-engine.mjs"), fetchImpl = globalThis.fetch, log = () => {}, loadEngine = null }) {
@@ -88,7 +92,7 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
   const load = async () => engine ??= await (loadEngine ? loadEngine() : import(pathToFileURL(engineFile).href));
   let job = null, ctrl = null, seq = 0;
 
-  const publicJob = (j) => j && { id: j.id, state: j.state, total: j.total, done: j.done, failed: j.failed, reasons: j.reasons, startedAt: j.startedAt, finishedAt: j.finishedAt ?? null, error: j.error ?? null, chaId: j.chaId, chatId: j.chatId, ...(j.result ? { result: j.result } : {}) };
+  const publicJob = (j) => j && { id: j.id, state: j.state, total: j.total, done: j.done, failed: j.failed, reasons: j.reasons, ...(j.relay ? { relay: true, waiting: j.relay.waiting() } : {}), startedAt: j.startedAt, finishedAt: j.finishedAt ?? null, error: j.error ?? null, chaId: j.chaId, chatId: j.chatId, ...(j.result ? { result: j.result } : {}) };
   // claim: 중계 모드에서 플러그인이 해 줄 모델 호출을 같이 내준다(한 번 내준 요청은 다시 안 준다)
   const status = ({ claim = false } = {}) => ({ available: available(), job: publicJob(job), ...(claim && job?.relay ? { calls: job.relay.claim() } : {}) });
   const relayResult = (b) => { if (!job?.relay) throw fail(409, "중계 분석 중이 아니에요"); return { ok: true, accepted: job.relay.result(b?.callId, { text: b?.text, error: b?.error }) }; };
@@ -100,7 +104,7 @@ function createAnalysis({ mem, engineFile = path.join(__dirname, "engine", "atel
     if (!chaId || !chatId) throw fail(400, "chaId·chatId가 필요해요");
     if (!Array.isArray(req.messages) || !req.messages.length) throw fail(400, "messages가 비었어요");
     if (req.messages.length > MAX_MESSAGES) throw fail(413, "메시지가 너무 많아요");
-    const relay = req.model?.kind === "relay" ? createRelay(Number(req.model.relayWaitSec) > 0 ? Number(req.model.relayWaitSec) : 900) : null;
+    const relay = req.model?.kind === "relay" ? createRelay({ maxWaitSec: Number(req.model.relayWaitSec) > 0 ? Number(req.model.relayWaitSec) : 0 }) : null;
     const call = relay ? relay.call : createModelCall(req.model, fetchImpl);
     const messages = req.messages.map(slimMessage);
     const settings = req.settings && typeof req.settings === "object" ? req.settings : {};

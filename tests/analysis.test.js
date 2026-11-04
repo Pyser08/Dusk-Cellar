@@ -148,7 +148,7 @@ test("중계 모드: 서버가 모델을 부르지 않고 플러그인이 호출
 test("중계 모드: 플러그인이 오류를 돌려주면 실패로 세고, 답이 없으면 시간 초과, 취소하면 멈춘다", async () => {
   const { a } = mk();
   a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, retryMs: 1, model: { kind: "relay", relayWaitSec: 0.05 } });
-  const j = await waitDone(a);   // 아무도 가져가지 않아 timeout → 실패로 센다
+  const j = await waitDone(a);   // maxWaitSec을 준 경우에만: 아무도 가져가지 않아 timeout → 실패로 센다
   assert.equal(j.state, "done"); assert.equal(j.failed, 1); assert.match(j.reasons[0], /timeout/);
   const b = mk().a;
   b.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, model: { kind: "relay" } });
@@ -156,4 +156,24 @@ test("중계 모드: 플러그인이 오류를 돌려주면 실패로 세고, �
   const k = await waitDone(b); assert.ok(["cancelled", "done"].includes(k.state));
   assert.equal(a.relayResult({}).accepted, false, "끝난 작업에 늦게 온 결과는 무시");
   const c = mk().a; assert.throws(() => c.relayResult({}), (e) => e.status === 409);
+});
+
+test("중계 모드: 플러그인이 없어도 작업은 실패하지 않고 기다리다, 다시 와서 가져가면 이어서 끝난다", async () => {
+  const { a } = mk();
+  a.start({ chaId: "c1", chatId: "t1", charName: "봇", messages: msgs(), settings: { staged: false }, model: { kind: "relay" } });
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(a.status().job.state, "running", "기다리는 중에도 실패하지 않아요");
+  assert.equal(a.status().job.relay, true);
+  const calls = a.status({ claim: true }).calls; assert.equal(calls.length, 1);
+  assert.equal(a.relayResult({ callId: calls[0].id, text: GOOD }).accepted, true);
+  const j = await waitDone(a); assert.equal(j.state, "done", j.error);
+});
+
+test("createRelay: 가져간 뒤 오래 답이 없으면 다시 내주고, 대기 표시가 켜진다", () => {
+  let t = 1000; const { createRelay } = require("../analysis.cjs");
+  const r = createRelay({ now: () => t });
+  r.call([{ role: "user", content: "a" }], { timeoutSec: 10 }).catch(() => {});
+  assert.equal(r.claim().length, 1); assert.equal(r.claim().length, 0);
+  t += 60e3; assert.equal(r.claim().length, 0, "아직 제한시간+60초 전이에요");
+  t += 20e3; assert.equal(r.waiting(), true); assert.equal(r.claim().length, 1, "오래 지나면 다시 내줘요");
 });
