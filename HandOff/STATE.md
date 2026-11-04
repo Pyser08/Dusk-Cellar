@@ -34,7 +34,7 @@
 - [ ] 복원 직후 열려 있던 리스 화면이 옛 DB를 다시 저장하는지 실기기 확인(현재 안내: 모두 새로고침)
 - [ ] 윈도우(NTFS 하드링크)·Termux(링크 불가 → 복사로 대체) 확인
 - [ ] 속도 측정(서버 저장 vs 플러그인 저장)
-- [ ] (효과 있으면) 분석·임베딩 서버 실행
+- [~] 분석 서버 실행(0.1.1 진행 중): 아래 '서버 분석' 참고. 임베딩은 아직.
 
 ## 플러그인 수정(무중단) — 사용자 결정 2026-11-03, RisuBard 구현 2026-11-03 (feat/0.1.0)
 리스는 플러그인이 다른 플러그인을 고치지 못하게 막았다(RisuAI PR #1572, 플러그인 API에서 plugins 필드 읽기 전용). Cellar가 대신 고친다.
@@ -86,3 +86,17 @@
 - 윈도우 exe는 launcher/cellar-launcher.c를 .github/workflows/launcher.yml이 빌드해 launcher/cellar-launcher-win-x64.exe로 커밋(아직 실행 안 됨 → 그 전엔 .bat).
 - 확인 못 한 것: C 런처 컴파일·실행, 실제 맥 .app 더블클릭(Gatekeeper)·윈도우 bat/tar/curl, 실제 휴대용 배포본.
 - 한계: git 없이 설치하면 앱의 '업데이트' 버튼은 안 돼요(설치 파일 재실행).
+
+## 서버 분석 (0.1.1, 브랜치 0.1.1, 2026-11-04)
+목적: 아이폰 등 기기의 메모리 부족(보통 지난 대화 분석 중)·배터리를 아끼려고, 서버가 있는 사람만 분석을 서버에서 돌린다. 서버가 없으면 지금 방식 그대로.
+- **엔진:** Atelier 분석 코드(`createMemoryRunner`·`createMemoryStoreV3`)를 한 파일로 묶어 `engine/atelier-engine.mjs`로 둔다(Atelier `src/cellar/node-entry.js` → `node tools/build-cellar-engine.mjs <Cellar 폴더>`; 빌드 결과물이라 직접 고치지 않는다. Atelier 분석 코드가 바뀌면 다시 빌드해 커밋). Node에서 그대로 불러와진다(204KB).
+- **`analysis.cjs`:** `POST /cellar/analysis` `{action:"start"|"status"|"cancel"}`, features `analysis`(엔진 파일이 있을 때). 한 번에 작업 하나.
+  - start 입력: `chaId·chatId·charName·chatName·messages[]`(분석에 필요한 필드만 남김) · `settings`(플러그인 index.settings) · `bot`(on·ignore) · `userNames[]` · `regex[]`(전처리 규칙 사본) · `prompts`(내 프롬프트 설정, 없으면 null) · `range{from,to,all}` · `redo` · `model{kind:"openai"|"anthropic", url, key, model, maxTokens?, temperature?, headers?}`.
+  - 인덱스(설정·봇 목록)는 요청에 실린 것을 작업 안에서만 쓰고(저장 안 함), 기억 폴더(`dusk.mem.v3.f.*`)만 Cellar 저장소에 쓴다. 쓰기는 baseRev로 충돌을 막고, 충돌이면 "busy"로 보고 러너의 일시 오류 재시도를 탄다.
+  - 모델 키는 작업 중 메모리에만 두고 상태·로그에 안 담는다. 상태: `job{id,state(running|done|error|cancelled),total,done,failed,reasons,result{folder,bots,status}}`. result는 플러그인이 자기 인덱스(폴더 요약 counts·bots)를 갱신할 때 쓴다.
+- 시험: `tests/analysis.test.js` 7개(가짜 모델 서버로 OpenAI·Anthropic 형식, 건너뛰기·redo, 실패·취소·409·400, 엔진 없음 501) + 통합 상태 1개. Cellar 107 통과.
+- **아직 안 한 것:**
+  1. **호스트 파일에서 채팅 직접 읽기**(RisuBard → PocketRisu → 원본). 이 환경에서 RisuBard 소스를 열 수 없어 채팅 저장 형식을 확인하지 못함. 지금은 플러그인이 채팅 메시지를 보내는 방식(모든 호스트에서 동작). 호스트 읽기가 생기면 start 입력에서 messages를 빼고 chaId·chatId만 받도록 확장.
+  2. **Atelier 플러그인 쪽 연결:** 서버가 `analysis`를 알리면 '지난 대화 분석'이 start를 부르고 status를 폴링해 진행률만 보여 주기, 끝나면 result로 자기 인덱스 갱신, 서버 오류·끊김이면 지금 방식으로 대체, 설정 모델이 '리스 보조 모델'(서버가 못 부름)이면 서버 분석 불가 안내.
+  3. 실제 서버(RisuBard·PocketRisu·리스AI) 확인, 분석 중 사용자가 같은 채팅에서 대화할 때의 폴더 충돌 실측.
+  4. 자동 기록(응답마다)은 서버로 안 보냄(지난 대화 분석만).

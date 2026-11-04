@@ -31,7 +31,7 @@ const crypto = require("node:crypto");
 // (require.main으로 구분하면 pm2처럼 ESM 방식으로 불러오는 실행 환경에서 정상 실행까지 막혀서 execArgv로만 본다)
 if (process.execArgv.some((a) => a === "-e" || a === "--eval" || a === "-p" || a === "--print" || /^--(eval|print)=/.test(a))) throw new Error("cellar-start.cjs는 node -e 로 불러올 수 없어요(직접 실행하는 파일이에요)");
 
-const VERSION = "0.1.0";
+const VERSION = "0.1.1";
 const argv = process.argv.slice(2);
 const dash = argv.indexOf("--");
 const own = dash < 0 ? argv : argv.slice(0, dash);
@@ -94,9 +94,11 @@ if (flag("--role-server")) {
   const plugins = saveDir ? createPlugins({ dataDir, saveDir, hostDir: opt("--host-dir", ""), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, altUrls: altUrls(), log }) : null;
   const { createAssets } = require("./assets.cjs");
   const assets = saveDir ? createAssets({ saveDir, host: detectHost(saveDir), risuUrl: `http://127.0.0.1:${opt("--risu-port", "7777")}`, altUrls: altUrls(), log }) : null;
+  const { createAnalysis } = require("./analysis.cjs");
+  const analysis = createAnalysis({ mem, log });
   const { createUpdate } = require("./update.cjs");
   const updater = createUpdate({ root: __dirname, dataDir, log });
-  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : [])];
+  const features = () => ["mem", "update", ...(backups ? ["backup"] : []), ...(assets?.status().ok ? ["assets"] : []), ...(plugins && detectHost(saveDir) !== "unknown" ? ["plugins"] : []), ...(analysis.available() ? ["analysis"] : [])];
   // 요청 본문(JSON)을 읽는다. 한도를 넘으면 413.
   const readJson = (req, max = MAX_VALUE) => new Promise((resolve, reject) => {
     const limit = max + 64 * 1024;
@@ -183,6 +185,13 @@ if (flag("--role-server")) {
         if (b.action === "missing") return send(res, 200, { ok: true, ...(await assets.missing(b)) });
         if (b.action === "put") return send(res, 200, { ok: true, ...(await assets.put(b)) });
         return send(res, 400, { ok: false, error: "action은 status·missing·put이에요" });
+      }
+      if (url.pathname === "/cellar/analysis" && req.method === "POST") {
+        const b = await readJson(req, 48 * 1024 * 1024);
+        if (b.action === "status") return send(res, 200, { ok: true, ...analysis.status() });
+        if (b.action === "start") return send(res, 200, { ok: true, job: await analysis.start(b) });
+        if (b.action === "cancel") return send(res, 200, analysis.cancel());
+        return send(res, 400, { ok: false, error: "action은 status·start·cancel이에요" });
       }
       return send(res, 404, { ok: false, error: "없는 주소예요" });
     } catch (e) {
