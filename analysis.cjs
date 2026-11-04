@@ -27,14 +27,22 @@ function createModelCall(model, fetchImpl) {
     const t = setTimeout(() => ctrl.abort(), sec * 1000);
     const onAbort = () => ctrl.abort(); signal?.addEventListener?.("abort", onAbort);
     try {
-      let body, headers = { "content-type": "application/json", ...(model.headers && typeof model.headers === "object" ? model.headers : {}) };
+      // 요청 본문: Atelier llm-client.js와 같은 규칙(추가 JSON·추론 설정·OpenRouter reasoning·OpenAI 추론 모델)
+      const extra = model.extraBody && typeof model.extraBody === "object" && !Array.isArray(model.extraBody) ? model.extraBody : {};
+      const extraHeaders = model.extraHeaders && typeof model.extraHeaders === "object" ? model.extraHeaders : {};
+      let body, headers = { "content-type": "application/json", ...extraHeaders, ...(model.headers && typeof model.headers === "object" ? model.headers : {}) };
       if (kind === "anthropic") {
         const sys = messages.filter((m) => m.role === "system").map((m) => text(m.content)).join("\n\n");
         const rest = messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: text(m.content) }));
-        body = { model: model.model, max_tokens: model.maxTokens ?? 8192, ...(sys ? { system: sys } : {}), messages: rest, ...(model.temperature != null ? { temperature: model.temperature } : {}) };
+        body = { model: model.model, max_tokens: model.maxTokens || 4096, ...(model.temperature != null ? { temperature: model.temperature } : {}), ...(sys ? { system: sys } : {}), messages: rest, ...extra };
         headers = { ...headers, "x-api-key": model.key ?? "", "anthropic-version": "2023-06-01" };
       } else {
-        body = { model: model.model, messages: messages.map((m) => ({ role: m.role, content: text(m.content) })), ...(model.maxTokens ? { max_tokens: model.maxTokens } : {}), ...(model.temperature != null ? { temperature: model.temperature } : {}) };
+        body = { model: model.model, messages: messages.map((m) => ({ role: m.role, content: text(m.content) })), ...(model.temperature != null ? { temperature: model.temperature } : {}), ...(model.maxTokens ? { max_tokens: model.maxTokens } : {}), ...(model.reasoningEffort ? { reasoning_effort: model.reasoningEffort } : {}), ...extra };
+        if (model.openrouter && model.reasoningEffort) { delete body.reasoning_effort; body.reasoning = { ...(extra.reasoning || {}), effort: model.reasoningEffort }; }
+        if (model.openaiReasoning) {
+          if (Object.hasOwn(body, "max_tokens")) { body.max_completion_tokens = body.max_tokens; delete body.max_tokens; }
+          if ((body.reasoning_effort || "default") !== "none") { delete body.temperature; delete body.top_p; }
+        }
         if (model.key) headers.authorization = `Bearer ${model.key}`;
       }
       const res = await fetchImpl(url.href, { method: "POST", headers, body: JSON.stringify(body), signal: ctrl.signal });

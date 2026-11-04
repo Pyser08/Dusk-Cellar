@@ -98,6 +98,6 @@
 - 시험: `tests/analysis.test.js` 7개(가짜 모델 서버로 OpenAI·Anthropic 형식, 건너뛰기·redo, 실패·취소·409·400, 엔진 없음 501) + 통합 상태 1개. Cellar 107 통과.
 - **아직 안 한 것:**
   1. **호스트 파일에서 채팅 직접 읽기**(RisuBard → PocketRisu → 원본). 이 환경에서 RisuBard 소스를 열 수 없어 채팅 저장 형식을 확인하지 못함. 지금은 플러그인이 채팅 메시지를 보내는 방식(모든 호스트에서 동작). 호스트 읽기가 생기면 start 입력에서 messages를 빼고 chaId·chatId만 받도록 확장.
-  2. ~~Atelier 플러그인 쪽 연결~~ **완료(2026-11-04, Atelier feat/1.9.3):** 기억이 서버 모드·Cellar가 `analysis` 기능을 알림·모델이 서버에서 부를 수 있는 종류(Claude·OpenAI·OpenRouter·Ollama·Custom, 추론 모델·추가 요청 설정 제외)일 때만 서버로 보내고, 아니면 기기 방식. 시작 전 실패·501은 기기 방식으로 대체, 시작한 뒤 연결이 끊기면(상태 6번 실패) 오류로 알림(서버는 계속 돌 수 있음). 설정 스위치 `serverAnalysis`(기본 켬). 끝나면 플러그인이 캐시를 비우고 인덱스 요약을 맞춤.
+  2. ~~Atelier 플러그인 쪽 연결~~ **완료(2026-11-04, Atelier feat/1.9.3):** 기억이 서버 모드·Cellar가 `analysis` 기능을 알림·모델이 서버에서 부를 수 있는 종류(Claude·OpenAI·OpenRouter·DeepSeek·Ollama·Custom. 추가 JSON·추론 설정·OpenAI 추론 모델·DeepSeek 사고 끄기는 `model.extraBody·extraHeaders·reasoningEffort·openrouter·openaiReasoning`로 받아 `analysis.cjs`가 llm-client.js와 같은 규칙으로 본문을 만듦. 리스 보조 모델·Google·Vertex·Copilot은 기기)일 때만 서버로 보내고, 아니면 기기 방식. 시작 전 실패·501은 기기 방식으로 대체, 시작한 뒤 연결이 끊기면(상태 6번 실패) 오류로 알림(서버는 계속 돌 수 있음). 설정 스위치 `serverAnalysis`(기본 켬). 끝나면 플러그인이 캐시를 비우고 인덱스 요약을 맞춤.
   3. 실제 서버(RisuBard·PocketRisu·리스AI) 확인, 분석 중 사용자가 같은 채팅에서 대화할 때의 폴더 충돌 실측.
   4. 자동 기록(응답마다)은 서버로 안 보냄(지난 대화 분석만).

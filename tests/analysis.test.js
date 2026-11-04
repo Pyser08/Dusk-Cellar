@@ -110,3 +110,21 @@ test("엔진 파일이 없으면 available=false, start는 501", async () => {
   assert.equal(a.available(), false);
   await assert.rejects(async () => a.start({}), (e) => e.status === 501);
 });
+
+test("요청 본문: 추가 JSON·추론 설정·OpenRouter·OpenAI 추론 모델 규칙", async () => {
+  const bodies = [];
+  const fake = async (url, init) => { bodies.push({ url, body: JSON.parse(init.body), headers: init.headers }); return { ok: true, status: 200, text: async () => JSON.stringify({ choices: [{ message: { content: "x" } }], content: [{ text: "x" }] }) }; };
+  const msgs = [{ role: "system", content: "S" }, { role: "user", content: "U" }];
+  const call = (m) => createModelCall({ url: "https://h.example/v1/chat/completions", model: "m", ...m }, fake)(msgs, {});
+  await call({ kind: "openai", temperature: 0.5, maxTokens: 100, extraBody: { top_p: 0.9, foo: 1 }, extraHeaders: { "x-a": "b" }, key: "k" });
+  assert.deepEqual([bodies[0].body.top_p, bodies[0].body.foo, bodies[0].body.max_tokens, bodies[0].body.temperature], [0.9, 1, 100, 0.5]);
+  assert.equal(bodies[0].headers["x-a"], "b"); assert.equal(bodies[0].headers.authorization, "Bearer k");
+  await call({ kind: "openai", openrouter: true, reasoningEffort: "high", extraBody: { reasoning: { max_tokens: 5 } } });
+  assert.deepEqual(bodies[1].body.reasoning, { max_tokens: 5, effort: "high" }); assert.equal(bodies[1].body.reasoning_effort, undefined);
+  await call({ kind: "openai", openaiReasoning: true, temperature: 0.7, maxTokens: 50, reasoningEffort: "low", extraBody: { top_p: 1 } });
+  assert.equal(bodies[2].body.max_tokens, undefined); assert.equal(bodies[2].body.max_completion_tokens, 50); assert.equal(bodies[2].body.temperature, undefined); assert.equal(bodies[2].body.top_p, undefined);
+  await call({ kind: "openai", openaiReasoning: true, temperature: 0.7, reasoningEffort: "none" });
+  assert.equal(bodies[3].body.temperature, 0.7, "reasoning_effort none이면 샘플링을 지우지 않는다");
+  await call({ kind: "anthropic", url: "https://a.example/v1/messages", key: "ak", extraBody: { thinking: { type: "disabled" } } });
+  assert.equal(bodies[4].body.max_tokens, 4096); assert.equal(bodies[4].body.system, "S"); assert.deepEqual(bodies[4].body.thinking, { type: "disabled" }); assert.equal(bodies[4].headers["x-api-key"], "ak");
+});
