@@ -31,7 +31,7 @@ const crypto = require("node:crypto");
 // (require.main으로 구분하면 pm2처럼 ESM 방식으로 불러오는 실행 환경에서 정상 실행까지 막혀서 execArgv로만 본다)
 if (process.execArgv.some((a) => a === "-e" || a === "--eval" || a === "-p" || a === "--print" || /^--(eval|print)=/.test(a))) throw new Error("cellar-start.cjs는 node -e 로 불러올 수 없어요(직접 실행하는 파일이에요)");
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 const argv = process.argv.slice(2);
 const dash = argv.indexOf("--");
 const own = dash < 0 ? argv : argv.slice(0, dash);
@@ -104,7 +104,7 @@ if (flag("--role-server")) {
     const limit = max + 64 * 1024;
     let size = 0; const chunks = [];
     req.on("data", (c) => { size += c.length; if (size > limit) { reject(Object.assign(new Error("요청이 너무 커요"), { status: 413 })); req.destroy(); } else chunks.push(c); });
-    req.on("end", () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}); } catch { reject(Object.assign(new Error("JSON이 아니에요"), { status: 400 })); } });
+    req.on("end", () => { try { const v = chunks.length ? JSON.parse(Buffer.concat(chunks).toString("utf8")) : {}; if (v === null || typeof v !== "object" || Array.isArray(v)) throw 0; resolve(v); } catch { reject(Object.assign(new Error("JSON 객체가 아니에요"), { status: 400 })); } });
     req.on("error", reject);
   });
   const server = http.createServer(async (req, res) => {
@@ -119,7 +119,7 @@ if (flag("--role-server")) {
       if (url.pathname === "/cellar/mem" && req.method === "GET") return send(res, 200, { ok: true, items: mem.list(url.searchParams.get("prefix") ?? "") });
       if (url.pathname === "/cellar/mem/batch" && req.method === "POST") return send(res, 200, { ok: true, results: mem.batch((await readJson(req)).ops) });
       if (url.pathname.startsWith("/cellar/mem/")) {
-        const key = decodeURIComponent(url.pathname.slice("/cellar/mem/".length));
+        let key; try { key = decodeURIComponent(url.pathname.slice("/cellar/mem/".length)); } catch { return send(res, 400, { ok: false, error: "키 주소 인코딩이 올바르지 않아요" }); }
         if (req.method === "GET") {
           const got = mem.get(key);
           if (!got) return send(res, 404, { ok: false, error: "없는 키예요" });
@@ -222,7 +222,21 @@ if (flag("--role-server")) {
   });
   const onUp = () => log(`Dusk Cellar v${VERSION} — http://${host}:${port}/cellar/health`);
   server.listen(port, host, onUp);
-  const stop = () => server.close(() => process.exit(0));
+  let stopping = false;
+  const stop = () => {
+    if (stopping) return; stopping = true;
+    setTimeout(() => process.exit(0), 3000).unref();   // 붙잡힌 연결이 있어도 3초 안에 끝낸다
+    server.close(() => process.exit(0)); server.closeAllConnections?.();
+  };
+  // 예상 못 한 오류 하나로 서버가 통째로 죽지 않게 한다. 짧은 시간에 계속 나면 그때는 끝내서 실행기가 새로 켜게 한다
+  const errs = [];
+  const survive = (kind) => (e) => {
+    log(`${kind}:`, e?.stack ?? e);
+    const now = Date.now(); errs.push(now); while (errs.length && now - errs[0] > 60_000) errs.shift();
+    if (errs.length > 20) { log("오류가 계속 나서 스스로 끝내요(실행기가 다시 켭니다)"); process.exit(1); }
+  };
+  process.on("uncaughtException", survive("처리 못 한 오류"));
+  process.on("unhandledRejection", survive("처리 못 한 약속 실패"));
   process.on("SIGTERM", stop);
   process.on("SIGINT", stop);
   // 부모(실행기)가 사라지면 같이 끝난다
@@ -286,7 +300,12 @@ function startRisu() {
 }
 const pendingAtBoot = readPendingAtBoot();
 if (!pendingAtBoot) startRisu();
-const exitOf = (child) => new Promise((r) => { if (!child || child.exitCode !== null || child.signalCode !== null) return r(); child.once("exit", () => r()); });
+const exitOf = (child, ms = 10_000) => new Promise((r) => {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return r();
+  child.once("exit", () => { clearTimeout(t); r(); });
+  // SIGTERM을 무시하는 프로세스가 복원을 영원히 막지 않게, 시간이 지나면 강제로 끈다
+  const t = setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, ms); t.unref?.();
+});
 
 // 복원: 리스·Cellar를 멈추고 → 지금 상태를 자동 백업 → 고른 백업으로 맞춘 뒤 → 다시 켠다.
 //   · 멈추기 전에 백업이 온전한지 점검한다(어긋나면 시작하지 않고 리스는 그대로 둔다).
@@ -363,7 +382,7 @@ function startDusk() {
     if (stopping || restoring) return;
     if (code === 78) { log("Dusk Cellar를 켜지 못했어요(포트 사용 중). 리스는 그대로 돌아요."); return; }
     if (Date.now() - t0 > 60_000) fails = 0;   // 1분 넘게 잘 돌았으면 실패 횟수 초기화
-    if (++fails > 5) { log("Dusk Cellar가 계속 꺼져서 다시 켜지 않아요. 리스는 그대로 돌아요."); return; }
+    if (++fails > 5) { log("Dusk Cellar가 계속 꺼져요. 리스는 그대로 돌고, 5분마다 다시 시도해요."); restartTimer = setTimeout(startDusk, 300_000); return; }
     const wait = Math.min(30_000, 1000 * 2 ** (fails - 1));
     log(`Dusk Cellar가 꺼졌어요(코드 ${code}). ${Math.round(wait / 1000)}초 뒤 다시 켜요.`);
     restartTimer = setTimeout(startDusk, wait);
@@ -375,6 +394,7 @@ function shutdown(sig) {
   if (stopping) return;
   stopping = true;
   clearTimeout(restartTimer);
+  setTimeout(() => { try { dusk?.kill("SIGKILL"); risu?.kill("SIGKILL"); } catch {} process.exit(0); }, 15_000).unref();   // 자식이 안 꺼져도 15초 뒤엔 끝낸다
   if (dusk) dusk.kill("SIGTERM");
   if (risu && risu.exitCode === null) risu.kill(sig);
   else if (restoring) setTimeout(() => process.exit(0), 300);

@@ -29,6 +29,8 @@ function createStore({ dir, now = () => new Date(), log = () => {} }) {
 
   // 시작할 때 각 파일의 첫 줄(메타)만 읽어 목록을 만든다. 값은 읽지 않는다.
   for (const name of fs.readdirSync(memDir)) {
+    // 쓰다 끊긴 임시 파일은 치운다(쌓이면 디스크만 차지한다)
+    if (name.endsWith(".mem.tmp")) { try { fs.rmSync(path.join(memDir, name), { force: true }); } catch { /* 무시 */ } continue; }
     if (!name.endsWith(".mem")) continue;
     try {
       const fd = fs.openSync(path.join(memDir, name), "r");
@@ -136,8 +138,8 @@ function createStore({ dir, now = () => new Date(), log = () => {} }) {
           if (o?.op === "del") return api.del(o.key, o);
           throw fail(400, "op는 put 또는 del이에요");
         } catch (e) {
-          if (!e.status) throw e;
-          return { ok: false, key: o?.key, status: e.status, error: e.message, ...(e.conflict ? { conflict: true, rev: e.rev } : {}) };
+          // 디스크 오류 같은 예상 밖 실패도 그 항목만 실패로 돌려준다(이미 쓴 앞 항목의 결과를 잃지 않게)
+          return { ok: false, key: o?.key, status: e.status ?? 500, error: e.message, ...(e.conflict ? { conflict: true, rev: e.rev } : {}) };
         }
       });
     },

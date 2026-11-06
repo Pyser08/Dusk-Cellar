@@ -106,3 +106,11 @@ test("하루 첫 쓰기 전에 스냅샷을 남기고 7일치만 둔다", () => 
   assert.equal(createStore({ dir: copy }).get(K).value, "v9");
   assert.equal(createStore({ dir }).get(K).value, "v10");
 });
+
+test("쓰다 끊긴 .tmp 파일은 시작할 때 치운다", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "st-"));
+  fs.mkdirSync(path.join(dir, "mem"), { recursive: true });
+  fs.writeFileSync(path.join(dir, "mem", "abc.mem.tmp"), "반쪽");
+  createStore({ dir });
+  assert.equal(fs.existsSync(path.join(dir, "mem", "abc.mem.tmp")), false);
+});

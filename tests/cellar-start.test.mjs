@@ -85,7 +85,7 @@ test("기억 저장소 주소: 쓰기·읽기·목록·충돌·재전송·삭제
     assert.deepEqual(h.features, ["mem", "update", "backup", "analysis", "analysis-relay"]);
     const an = await fetch(`http://127.0.0.1:${p}/cellar/analysis`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) }).then((r) => r.json());
     assert.equal(an.ok, true); assert.equal(an.available, true); assert.equal(an.job, null);
-    assert.equal(h.version, "0.1.1");
+    assert.equal(h.version, "0.1.2");
     assert.equal((await call("GET", `${base}/${K}`)).status, 404);
     const w1 = await call("PUT", `${base}/${K}`, { value: '{"n":1}', baseRev: 0, opId: "a1" });
     assert.equal(w1.json.rev, 1);
@@ -284,4 +284,33 @@ test("복원 전 점검에서 실패하면 리스를 멈추지 않고 실패 상
     assert.equal(fs.readFileSync(path.join(root, "save", "database.bin"), "utf8"), "good");
     assert.equal(fs.existsSync(path.join(data, "restore.pending.json")), false);
   } finally { ch.kill("SIGTERM"); await exited(ch); }
+});
+
+test("이상한 입력(null 본문·깨진 % 키)은 500이 아니라 400이고, 서버는 계속 산다", async () => {
+  const root = fakeRisu(), p = port();
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d")], { stdio: "ignore" });
+  try {
+    await health(p);
+    const base = `http://127.0.0.1:${p}/cellar`;
+    for (const body of ["null", "[1]", "3", "{깨짐"]) {
+      const r = await fetch(`${base}/mem/batch`, { method: "POST", body });
+      assert.equal(r.status, 400, `본문 ${body}`);
+    }
+    assert.equal((await fetch(`${base}/mem/%E0%A4%A`)).status, 400);
+    assert.equal((await fetch(`${base}/health`)).status, 200);
+  } finally { ch.kill("SIGTERM"); await exited(ch); }
+});
+
+test("SIGTERM을 무시하는 리스도 종료 때 붙잡히지 않는다(강제 종료)", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "risu-"));
+  fs.mkdirSync(path.join(root, "server", "node"), { recursive: true });
+  fs.writeFileSync(path.join(root, "server", "node", "server.cjs"), `process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);`);
+  const p = port();
+  const ch = spawn(process.execPath, [LAUNCHER, "--risu", path.join(root, "server/node/server.cjs"), "--dusk-port", String(p), "--data-dir", path.join(root, "d")], { stdio: "ignore" });
+  await health(p);
+  const t0 = Date.now();
+  ch.kill("SIGTERM");
+  const code = await Promise.race([exited(ch), sleep(20000).then(() => "멈춤")]);
+  assert.notEqual(code, "멈춤", "15초 안에 끝나야 해요");
+  assert.ok(Date.now() - t0 < 18000);
 });

@@ -141,7 +141,7 @@ const has = (cmd) => capture(cmd, ["--version"]) !== null || capture(cmd, ["-v"]
 async function waitHealth(port, ms = 20000) {
   const end = Date.now() + ms;
   while (Date.now() < end) {
-    try { const r = await fetch(`http://127.0.0.1:${port}/cellar/health`); if (r.ok) return await r.json(); } catch { /* 아직 */ }
+    try { const r = await fetch(`http://127.0.0.1:${port}/cellar/health`, { signal: AbortSignal.timeout(3000) }); if (r.ok) return await r.json(); } catch { /* 아직 */ }
     await new Promise((r) => setTimeout(r, 500));
   }
   return null;
