@@ -24,6 +24,12 @@ test("윈도우: 템플릿 exe가 있으면 이름_cellar.exe 복사, 없으면 
   ops = P.plan({ root: r, platform: "win32", found, exeTemplate: null });
   assert.equal(path.basename(ops[0].path), "RisuBard_cellar.bat");
   assert.match(ops[0].content, /bin\\node\.exe/); assert.match(ops[0].content, /cellar-start\.cjs/);
+  assert.ok(!/(^|[^\r])\n/.test(ops[0].content), "윈도우 .bat는 CRLF여야 해요(LF만 있으면 cmd가 한글 줄을 잘못 읽음)");
+});
+
+test("install.bat도 CRLF", () => {
+  const raw = fs.readFileSync(path.join(__dirname, "..", "install.bat"), "utf8");
+  assert.ok(raw.includes("\r\n") && !/(^|[^\r])\n/.test(raw));
 });
 
 test("맥: .app 번들(Info.plist·실행 스크립트·아이콘 복사), 이름은 원본_cellar", () => {

@@ -63,6 +63,7 @@ function plist(name, version = "1.0") {
 `;
 }
 function batScript(name) {
+  // 윈도우 cmd는 줄바꿈이 CRLF가 아니면 한글 줄·괄호 묶음을 엉뚱하게 잘라 읽는다('o' is not recognized 등) → 반드시 CRLF
   return `@echo off
 chcp 65001 >nul
 title ${name}
@@ -74,7 +75,7 @@ start "" "http://localhost:%PORT%"
 "bin\\node.exe" "Dusk-Cellar\\cellar-start.cjs" --risu "server\\node\\server.cjs" --data-dir "Dusk-Cellar\\dusk-data"
 echo.
 pause
-`;
+`.replace(/\r?\n/g, "\r\n");
 }
 function shScript(name) {
   return `#!/bin/bash
