@@ -160,7 +160,7 @@ function createAnalysis({ mem, backupDir = null, engineFile = path.join(__dirnam
     store.updateFolder = async (...a) => {
       for (let i = 0; ; i++) {
         try { return await baseUpdate(...a); }
-        catch (e) { if (!/^busy:/.test(String(e?.message)) || i >= 12) throw e; store.dropCache(); await new Promise((r) => setTimeout(r, 15 * (i + 1))); }
+        catch (e) { if (!/\bbusy:/.test(String(e?.message)) || i >= 12) throw e; store.dropCache(); await new Promise((r) => setTimeout(r, 15 * (i + 1))); }
       }
     };
     // ② 시작 전 폴더 사본을 남긴다(최근 5개). 문제가 생기면 이 파일의 value를 dusk.mem 키에 되돌리면 된다

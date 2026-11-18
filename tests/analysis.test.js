@@ -226,7 +226,9 @@ test("프리셋 호출: 리스 보조 모델 프리셋·주소 없는 프리셋�
 
 // ── 기억 손실 방지 ──
 const manyMsgs = (n) => { const o = []; for (let i = 0; i < n; i++) { o.push({ role: "user", data: `입력 ${i}` }); o.push({ role: "char", data: `${LONG} 응답 번호 ${i}`, chatId: `m${i}` }); } return o; };
-const personFor = (k) => JSON.stringify({ people: [{ name: `인물${k}`, act: `행동 ${k}`, p: 2, s: 2, r: 2 }], scene: { sum: `장면 ${k}`, facts: [`사실 ${k}`], place: "곳", who: [`인물${k}`], changed: true } });
+// 이름이 서로 비슷하면(인물1·인물2) 새 엔진이 별칭으로 합치므로, 시험 인물은 서로 다른 이름으로
+const NAMES = ["가람", "나래", "다온", "라희", "마루", "바다", "서윤", "아라", "자운", "차미", "카이", "타라", "파랑", "하늘", "고은", "누리", "도담", "로운", "모아", "보람", "소담", "윤슬", "지안", "채운"], NAME_SET = new Set(NAMES);
+const personFor = (k) => JSON.stringify({ people: [{ name: NAMES[k % NAMES.length], act: `행동 ${k}`, p: 2, s: 2, r: 2 }], scene: { sum: `장면 ${k}`, facts: [`사실 ${k}`], place: "곳", who: [NAMES[k % NAMES.length]], changed: true } });
 
 test("동시 쓰기: 서버 분석 중 플러그인이 같은 폴더를 계속 바꿔도 양쪽 기록이 모두 남는다(중복 없음)", async () => {
   let n = 0;
@@ -253,7 +255,7 @@ test("동시 쓰기: 서버 분석 중 플러그인이 같은 폴더를 계속 �
   const j = await waitDone(a); stop = true; await writer;
   assert.equal(j.state, "done", j.error); assert.equal(j.failed, 0, j.reasons.join("|"));
   const f = JSON.parse(mem.get(mem.list("dusk.mem.v3.f.")[0].key).value);
-  const server = Object.keys(f.people).filter((k) => /^인물\d+$/.test(k)), external = Object.keys(f.people).filter((k) => /^외부\d+$/.test(k));
+  const server = Object.keys(f.people).filter((k) => NAME_SET.has(k)), external = Object.keys(f.people).filter((k) => /^외부\d+$/.test(k));
   assert.equal(server.length, n, `서버가 만든 기록이 모두 남아야 해요(모델 호출 ${n}번, 남은 ${server.length})`);
   assert.equal(external.length, ext, "플러그인이 쓴 기록도 하나도 안 사라져야 해요");
   assert.ok(ext >= 3 && conflicts >= 1, "시험이 실제로 겹쳤어요(외부 쓰기 " + ext + "번, 충돌 " + conflicts + "번)");
@@ -268,10 +270,10 @@ test("취소 후 다시 시작하면 남은 것만 분석하고 기존 기록은
   await a.start(req);
   for (let i = 0; i < 400 && n < 2; i++) await new Promise((r) => setTimeout(r, 5));
   a.cancel(); const j1 = await waitDone(a); assert.ok(["cancelled", "done"].includes(j1.state));
-  const keyOf = () => mem.list("dusk.mem.v3.f.")[0].key, before = JSON.parse(mem.get(keyOf()).value), had = Object.keys(before.people).filter((k) => /^인물\d+$/.test(k)).length;
+  const keyOf = () => mem.list("dusk.mem.v3.f.")[0].key, before = JSON.parse(mem.get(keyOf()).value), had = Object.keys(before.people).filter((k) => NAME_SET.has(k)).length;
   assert.ok(had >= 1);
   await a.start(req); const j2 = await waitDone(a); assert.equal(j2.state, "done", j2.error); assert.equal(j2.failed, 0);
-  const after = JSON.parse(mem.get(keyOf()).value), names = Object.keys(after.people).filter((k) => /^인물\d+$/.test(k));
+  const after = JSON.parse(mem.get(keyOf()).value), names = Object.keys(after.people).filter((k) => NAME_SET.has(k));
   for (const k of Object.keys(before.people)) assert.ok(after.people[k], `${k}가 사라졌어요`);
   assert.equal(names.length, n, "모델이 만든 기록이 하나도 안 사라지고 중복도 없어요");
   for (const k of names) assert.equal(after.people[k].records.length, 1);

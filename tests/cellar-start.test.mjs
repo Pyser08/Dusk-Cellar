@@ -85,7 +85,7 @@ test("기억 저장소 주소: 쓰기·읽기·목록·충돌·재전송·삭제
     assert.deepEqual(h.features, ["mem", "update", "backup", "analysis", "analysis-relay"]);
     const an = await fetch(`http://127.0.0.1:${p}/cellar/analysis`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "status" }) }).then((r) => r.json());
     assert.equal(an.ok, true); assert.equal(an.available, true); assert.equal(an.job, null);
-    assert.equal(h.version, "0.1.2");
+    assert.equal(h.version, "0.1.3"); assert.match(h.engine, /^\d+\.\d+\.\d+$/, "health에 분석 엔진 버전");
     assert.equal((await call("GET", `${base}/${K}`)).status, 404);
     const w1 = await call("PUT", `${base}/${K}`, { value: '{"n":1}', baseRev: 0, opId: "a1" });
     assert.equal(w1.json.rev, 1);

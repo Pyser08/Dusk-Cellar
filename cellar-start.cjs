@@ -31,7 +31,9 @@ const crypto = require("node:crypto");
 // (require.main으로 구분하면 pm2처럼 ESM 방식으로 불러오는 실행 환경에서 정상 실행까지 막혀서 execArgv로만 본다)
 if (process.execArgv.some((a) => a === "-e" || a === "--eval" || a === "-p" || a === "--print" || /^--(eval|print)=/.test(a))) throw new Error("cellar-start.cjs는 node -e 로 불러올 수 없어요(직접 실행하는 파일이에요)");
 
-const VERSION = "0.1.2";
+const VERSION = "0.1.3";
+// 분석 엔진 버전: 엔진 파일 첫 줄 배너(// Dusk Atelier vX.Y.Z 분석 엔진)를 시작할 때 한 번 읽는다(엔진을 불러오지는 않음). /cellar/health의 engine 값.
+const ENGINE_VERSION = (() => { try { const head = require("node:fs").readFileSync(require("node:path").join(__dirname, "engine", "atelier-engine.mjs"), "utf8").slice(0, 300); return /Dusk Atelier v(\d+\.\d+\.\d+)/.exec(head)?.[1] ?? ""; } catch { return ""; } })();
 const argv = process.argv.slice(2);
 const dash = argv.indexOf("--");
 const own = dash < 0 ? argv : argv.slice(0, dash);
@@ -112,7 +114,7 @@ if (flag("--role-server")) {
       const url = new URL(req.url, "http://x");
       if (req.method === "OPTIONS") return send(res, 204, {});
       // 연결 확인은 토큰 없이도 된다(있는지만 알려 줌, 데이터 없음). features: 이 서버가 지원하는 기능
-      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: features(), pid: process.pid, dataId });
+      if (url.pathname === "/cellar/health") return send(res, 200, { ok: true, name: "dusk-cellar", version: VERSION, engine: ENGINE_VERSION, uptime: Math.round((Date.now() - started) / 1000), auth: authed(req), features: features(), pid: process.pid, dataId });
       if (!authed(req)) return send(res, 401, { ok: false, error: "토큰이 없거나 달라요" });
 
       // 기억 저장소(store.cjs). 쓰기는 모두 POST /cellar/mem/batch로도 보낼 수 있다(프록시가 PUT·DELETE를 막을 때 대비)
