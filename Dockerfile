@@ -1,6 +1,6 @@
 # Dusk Cellar 컨테이너 이미지 — 리스 컨테이너 옆에 붙이는 사이드카용.
 # 실행기(리스를 자식으로 켜는 부분) 없이 Cellar 서버(--role-server)만 돈다. 자세한 건 README '도커로 붙이기'.
-# Node 기본 모듈만 쓴다(npm install 없음). 세이브 SQLite 온라인 백업(node:sqlite)에 Node 22.16 이상이 필요하다.
+# Cellar 본체는 Node 기본 모듈만 쓴다. 옛 형식 세이브용 msgpackr·fflate만 /opt/risu-host에 따로 둔다. 세이브 SQLite 온라인 백업(node:sqlite)에 Node 22.16 이상이 필요하다.
 FROM node:22-slim
 
 # 옛 형식 database.bin(PocketRisu 등)을 풀 때 Cellar는 리스의 msgpackr·fflate를 빌려 쓴다(--host-dir).
