@@ -105,7 +105,7 @@ services:
 | `CELLAR_SAVE_DIR` | 컨테이너 안 세이브 폴더 (기본 `/save`, 비우면 백업·플러그인·에셋 끔) |
 | `CELLAR_RISU_PORT` | 리스 서버 포트 (비우면 Cellar 기본값 7777 → 6001 순서로 찾음) |
 | `CELLAR_KEEP` | 백업 보관 개수 (기본 5) |
-| `CELLAR_HOST_DIR` | 리스 앱 폴더 (옛 형식 database.bin을 풀 때만) |
+| `CELLAR_HOST_DIR` | msgpackr·fflate를 찾을 폴더 (옛 형식 database.bin을 풀 때, 기본 `/opt/risu-host` — 이미지에 PocketRisu와 같은 버전이 들어 있어요) |
 | `CELLAR_REQUIRE_TOKEN` | `1`이면 loopback 요청에도 토큰 요구 |
 
 - 이미지 안에서는 실행기 없이 Cellar 서버만 돌아요. 그래서 **화면에서 복원(`restore`)과 자체 업데이트(`/cellar/update`)는 안 돼요**(각각 `409`·`501`). 백업 만들기·목록·지우기와 기억·에셋·플러그인 기능은 그대로예요.

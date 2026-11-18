@@ -3,6 +3,11 @@
 # Node 기본 모듈만 쓴다(npm install 없음). 세이브 SQLite 온라인 백업(node:sqlite)에 Node 22.16 이상이 필요하다.
 FROM node:22-slim
 
+# 옛 형식 database.bin(PocketRisu 등)을 풀 때 Cellar는 리스의 msgpackr·fflate를 빌려 쓴다(--host-dir).
+# 사이드카에는 리스 앱 폴더가 없으므로 PocketRisu와 같은 버전을 따로 넣어 두고 기본 host-dir로 쓴다(CELLAR_HOST_DIR로 바꿀 수 있음).
+WORKDIR /opt/risu-host
+RUN npm install --no-save --no-audit --no-fund --omit=optional msgpackr@1.11.9 fflate@0.8.2 && npm cache clean --force
+
 WORKDIR /app
 COPY *.cjs ./
 COPY engine/ ./engine/
