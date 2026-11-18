@@ -21,7 +21,7 @@
 - `tests/` — `node --test tests/*.js tests/*.mjs` (57개). `tests/helpers/fakerisubard.cjs` = RisuBard 세이브 폴더 흉내 + 가짜 RisuBard 서버(로그인·세션·외부 변경 검토).
 
 ## 진행
-- [x] (2026-11-19) **0.1.3**: 분석 엔진을 Atelier v2.2.15로 다시 빌드(engine/atelier-engine.mjs, 예전 v1.9.1), `/cellar/health`에 `engine`(엔진 파일 첫 줄 배너를 시작할 때 한 번 읽음), analysis.cjs 충돌 재시도 `/\bbusy:/`(Atelier 2.x 저장 오류는 앞에 설명이 붙음), tests/analysis 시험 인물 이름을 서로 다르게(새 엔진 별칭 합치기). **앞으로 Atelier 릴리스 때 엔진도 다시 빌드해서 올린다.** SQLite 백업 시험은 sqlite 없는 기기에서 원래 실패.
+- [x] (2026-11-19) **0.1.3**: 분석 엔진을 Atelier v2.2.16으로 다시 빌드(engine/atelier-engine.mjs, 예전 v1.9.1), `/cellar/health`에 `engine`(엔진 파일 첫 줄 배너를 시작할 때 한 번 읽음), analysis.cjs 충돌 재시도 `/\bbusy:/`(Atelier 2.x 저장 오류는 앞에 설명이 붙음), tests/analysis 시험 인물 이름을 서로 다르게(새 엔진 별칭 합치기). **앞으로 Atelier 릴리스 때 엔진도 다시 빌드해서 올린다.** SQLite 백업 시험은 sqlite 없는 기기에서 원래 실패.
 - [x] 실행 구조, 설치기, README (2026-11-03, b48c204)
 - [x] 실제 설치 시험: RisuBard(우분투 서버, ~/RisuBard/Dusk-Cellar, pm2) 5/5 통과, health 응답 확인 (2026-11-03). RisuBard 시작 파일 = server/node/server.cjs 자동 찾기 성공
 - [ ] 윈도우·맥·Termux, 원본 RisuAI 설치 시험
