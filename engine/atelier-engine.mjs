@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.16 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.17 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -7746,7 +7746,8 @@ async function runAIInner(api, messages, pick, signal) {
     if (!customRunner) throw new Error("\uB0B4 API \uBAA8\uB378\uC744 \uC4F8 \uC218 \uC5C6\uC5B4\uC694 (\uBAA8\uB378 \uC124\uC815\uC774 \uC544\uC9C1 \uC900\uBE44\uB418\uC9C0 \uC54A\uC558\uC5B4\uC694).");
     return direct(r64Messages(api, messages).then((m) => customRunner(api, m, pick, signal)));
   }
-  const opts = { messages, mode: pick?.mode && pick.mode !== "static" ? pick.mode : "submodel", allowPlugins: true };
+  const mode0 = pick?.mode === "memory" && !pick.explicit ? "submodel" : pick?.mode;
+  const opts = { messages, mode: mode0 && mode0 !== "static" ? mode0 : "submodel", allowPlugins: true };
   if (pick?.mode === "static" && pick.staticModel) opts.staticModel = pick.staticModel;
   let last = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
@@ -8292,9 +8293,18 @@ var legacyChatKeyOf = (chat, index) => String(chat?.id ?? index ?? "");
 
 // src/data/memoryrunner.js
 function followHubPick(base, hub2) {
-  if (!hub2 || !["memory", "submodel", void 0].includes(base?.mode)) return base;
-  return { ...hub2, timeoutSec: base.timeoutSec };
+  if (!["memory", "submodel", void 0].includes(base?.mode)) return base;
+  if (hub2) return { ...hub2, timeoutSec: base.timeoutSec };
+  if (base?.mode === "memory" && !base.explicit) return { ...base, mode: "submodel" };
+  return base;
 }
+var hubPickOf = (cfg) => {
+  try {
+    return pickFor(cfg, "writer") ?? pickFor(cfg, "");
+  } catch {
+    return null;
+  }
+};
 var MAX_FAILS = 5;
 var confirmOf = (idx) => idx?.settings?.confirm === "now" ? "now" : "next";
 var batchSize = (v) => {
@@ -8331,7 +8341,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
   const baseModelOf = (s) => ({ ...s.model, timeoutSec: Number.isFinite(s.modelTimeoutSec) ? s.modelTimeoutSec : 600 });
   const hubPick = async () => {
     try {
-      return pickFor(await getCfg(api), "");
+      return hubPickOf(await getCfg(api));
     } catch {
       return null;
     }
@@ -8906,7 +8916,7 @@ var DEFAULT_SETTINGS = Object.freeze({
   minChars: 120,
   personCap: 300,
   // confirm: next=다음 입력을 보낼 때 직전 응답을 확정해 기록(리롤 중인 응답은 건드리지 않음) | now=응답 직후
-  model: { mode: "memory" },
+  model: { mode: "submodel" },
   modelTimeoutSec: 600,
   backend: "auto",
   potMode: true,
@@ -9323,7 +9333,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.16" : "dev";
+var ENGINE_VERSION = true ? "2.2.17" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
