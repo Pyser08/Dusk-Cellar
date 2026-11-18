@@ -112,3 +112,9 @@
 - start.model.kind `preset`: Atelier의 `callWriterModel`(llm-client)을 그대로 실행(Vertex JWT·Copilot·Google·추론·추가 JSON). 플러그인 설정 '서버 분석에 쓸 모델'로 고른 '내 API' 프리셋만 해당 → 리스 화면 없이 끝까지 진행(백그라운드 안전). 리스 쪽 모델은 relay(화면 필요, 대기/재개).
 - 기억 손실 방지: `store.updateFolder` 충돌(busy)시 모델 재호출 없이 새 폴더에 결과 재적용(최대 12회), 시작 전 폴더 사본 `dataDir/analysis-backups/<jobid>.json`(최근 5개).
 - 시험: 동시 쓰기(서버 충돌 ≥1 확인)·취소 후 재시작·백업·Vertex JWT·preset 400. 미확인: 실제 서버·iOS·실제 Vertex/Copilot 계정.
+
+## 도커 이미지 (2026-11-18, 브랜치 feat/docker)
+- `Dockerfile`(node:22-slim, `*.cjs`+`engine/`만) · `docker/entrypoint.sh`(환경변수 → `--role-server` 옵션, 첫 인자가 옵션이 아니면 그 명령 실행) · `.github/workflows/docker.yml`(main·v* 태그 → `ghcr.io/<소유자>/dusk-cellar`, amd64·arm64, PR은 빌드만). README '도커로 붙이기'.
+- 구조: 리스 컨테이너의 네트워크에 붙는 사이드카(`network_mode: service:<리스>`). Atelier는 토큰 없이 `127.0.0.1:6011`을 리스 프록시로 부르므로 loopback이어야 한다. 실행기가 없어서 복원(409)·자체 업데이트(501)는 안 된다.
+- 확인: 이미지 안 Node 22.23 + `node:sqlite` backup 있음, 시험 122개 통과(호스트 Node 22.23). 실제 PocketRisu(도커) 옆에 붙여 health·features 확인.
+- 확인된 함정: 리스 컨테이너를 재시작하면 사이드카는 `running`인 채로 옛 네트워크에 남는다 → Cellar 컨테이너도 재시작해야 한다(README에 안내).
