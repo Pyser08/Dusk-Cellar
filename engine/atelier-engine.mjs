@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.17 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.19 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -2322,23 +2322,31 @@ function parseLinesLoose(raw) {
 // src/engine/pot/cycle-tracking.js
 var CYCLE_RATE_RANGE = Object.freeze({ min: 0.5, max: 3, step: 0.1, default: 1 });
 var cyclePad = (n) => String(n).padStart(2, "0");
-var cycleIsoDate = (y, m, d) => y + "-" + cyclePad(m) + "-" + cyclePad(d);
+var cycleIsoDate = (y, m, d) => String(y).padStart(4, "0") + "-" + cyclePad(m) + "-" + cyclePad(d);
+var cycleUtc = (y, m, d) => {
+  const t = new Date(Date.UTC(2e3, m - 1, d));
+  t.setUTCFullYear(y, m - 1, d);
+  return t;
+};
 var cycleValidDate = (y, m, d) => {
-  const t = new Date(Date.UTC(y, m - 1, d));
+  const t = cycleUtc(y, m, d);
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 };
 function cycleDayNumber(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ""));
-  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 864e5 : NaN;
+  return m ? cycleUtc(+m[1], +m[2], +m[3]).getTime() / 864e5 : NaN;
 }
-var CYCLE_FULL_DATE = /(\d{4})\s*(?:년|[.\-/])\s*(\d{1,2})\s*(?:월|[.\-/])\s*(\d{1,2})\s*일?/g;
+var CYCLE_FULL_DATE = /(?<!\d)(?:(\d{1,4})\s*년|(\d{4})\s*[.\-/])\s*(\d{1,2})\s*(?:월|[.\-/])\s*(\d{1,2})\s*일?/g;
 var CYCLE_MONTH_DAY = /(\d{1,2})\s*월\s*(\d{1,2})\s*일/g;
 function storyDateFromText(text2, previous = "") {
   const lines = String(text2 || "").split(/\r?\n/), found = [];
   lines.forEach((line, index) => {
     const status = line.trim().length <= 80 || /[\[\]【】|]/.test(line);
     const full = [...line.matchAll(CYCLE_FULL_DATE)];
-    for (const m of full) if (cycleValidDate(+m[1], +m[2], +m[3])) found.push({ iso: cycleIsoDate(+m[1], +m[2], +m[3]), status, index, full: true });
+    for (const m of full) {
+      const y = +(m[1] ?? m[2]);
+      if (cycleValidDate(y, +m[3], +m[4])) found.push({ iso: cycleIsoDate(y, +m[3], +m[4]), status, index, full: true });
+    }
     if (full.length) return;
     for (const m of line.matchAll(CYCLE_MONTH_DAY)) {
       const base = /^\d{4}/.exec(previous)?.[0] || "2000";
@@ -6008,7 +6016,7 @@ var PeopleImportController = class {
     this.loreSelector = new PeopleLoreSelector({ api, wikiController });
   }
   status() {
-    return { phase: this.phase, stage: this.stage, completed: this.completed, total: this.total, elapsedMs: this.elapsedMs, error: this.error, candidates: this.candidates.map((candidate) => ({ ...candidate, selected: this.selected.has(candidate.id) })), sexualField: this.sexualField, sexualDocumentId: this.sexualDocumentId, applying: this.applying, applyReport: this.applyReport ? { ...this.applyReport } : null, running: this.phase === "running" || this.applying };
+    return { phase: this.phase, stage: this.stage, completed: this.completed, total: this.total, elapsedMs: this.elapsedMs, error: this.error, candidates: this.candidates.map((candidate) => ({ ...candidate, selected: this.selected.has(candidate.id) })), sexualField: this.sexualField, sexualDocumentId: this.sexualDocumentId, applying: this.applying, applyReport: this.applyReport ? { ...this.applyReport } : null, running: this.phase === "running" || this.applying, failedPeople: (this.failedPeople || []).map((f) => ({ name: f.person.name, error: f.error })) };
   }
   subscribe(listener) {
     this.listeners.add(listener);
@@ -6032,6 +6040,8 @@ var PeopleImportController = class {
     this.total = total;
     this.error = "";
     this.candidates = [];
+    this.failedPeople = [];
+    this.retryCtx = null;
     this.selected.clear();
     this.startedAt = Date.now();
     this.cancelRequested = false;
@@ -6092,18 +6102,17 @@ ${scope.revision}`;
       this.completed = 0;
       this.total = merged.length;
       this.emit();
-      const compiled = [];
-      for (let index = 0; index < merged.length; index++) {
-        const rawPerson = merged[index], direct = rawPerson.sourceRefs.map((ref) => sourceMap.get(ref)).filter(Boolean), relevant = peopleImportRelevantSources(source.sources, { title: rawPerson.name, aliases: rawPerson.aliases || [] }), related = [...new Map([...direct, ...relevant].map((item) => [item.ref, item])).values()], preferred = mode === "lore-selected" ? { name: rawPerson.name, aliases: [...rawPerson.aliases] } : preferKoreanPeopleName([rawPerson.name, ...rawPerson.aliases], related), person = { ...rawPerson, ...preferred, identityNames: [rawPerson.name, ...rawPerson.aliases] }, profile = await peopleImportCompileProfile({ person, related, wikiScope: scope, sourceCheck: this.sourceValidation, reservedPeople: merged.filter((item) => item !== rawPerson).map((item, index2) => ({ ...item, id: "reserved:" + index2, identityNames: [item.name, ...item.aliases] })), seed: `${this.scopeToken}|${person.name}|${Date.now()}`, traceStore: this.traceStore, preset, scope: scopeMeta, api: this.api, keyStore: this.keyStore, signal: this.abortController.signal, sexualDesireEnabled: settings.sexualDesireEnabled, paraphiliaEnabled: settings.paraphiliaEnabled, explicitSexualStyleEnabled: settings.explicitSexualStyleEnabled }), match = peopleImportCharacterMatch(scope, { ...person, ...profile }), id = `candidate:${peopleImportFnv(`${profile.name}|${profile.evidenceRefs.join("|")}`)}`;
-        compiled.push(peopleRequestedCandidate(scope, { ...person, identityNames: [person.name, ...person.aliases] }, profile));
-        this.completed = index + 1;
-        this.emit();
-      }
+      const compileOne = async (rawPerson) => {
+        const direct = rawPerson.sourceRefs.map((ref) => sourceMap.get(ref)).filter(Boolean), relevant = peopleImportRelevantSources(source.sources, { title: rawPerson.name, aliases: rawPerson.aliases || [] }), related = [...new Map([...direct, ...relevant].map((item) => [item.ref, item])).values()], preferred = mode === "lore-selected" ? { name: rawPerson.name, aliases: [...rawPerson.aliases] } : preferKoreanPeopleName([rawPerson.name, ...rawPerson.aliases], related), person = { ...rawPerson, ...preferred, identityNames: [rawPerson.name, ...rawPerson.aliases] }, profile = await peopleImportCompileProfile({ person, related, wikiScope: scope, sourceCheck: this.sourceValidation, reservedPeople: merged.filter((item) => item !== rawPerson).map((item, index) => ({ ...item, id: "reserved:" + index, identityNames: [item.name, ...item.aliases] })), seed: `${this.scopeToken}|${person.name}|${Date.now()}`, traceStore: this.traceStore, preset, scope: scopeMeta, api: this.api, keyStore: this.keyStore, signal: this.abortController.signal, sexualDesireEnabled: settings.sexualDesireEnabled, paraphiliaEnabled: settings.paraphiliaEnabled, explicitSexualStyleEnabled: settings.explicitSexualStyleEnabled }), match = peopleImportCharacterMatch(scope, { ...person, ...profile }), id = `candidate:${peopleImportFnv(`${profile.name}|${profile.evidenceRefs.join("|")}`)}`;
+        return peopleRequestedCandidate(scope, { ...person, identityNames: [person.name, ...person.aliases] }, profile);
+      };
+      this.retryCtx = { compileOne, merged, scope, mode, keywords };
+      const compiled = await this.compileEach(merged, compileOne);
       if (this.sourceValidation && !await this.sourceValidation()) throw new Error("\uC120\uD0DD\uD55C \uB85C\uC5B4\uBD81\uC774\uB098 \uC870\uAC74\uC774 \uBC14\uB00C\uC5C8\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC120\uD0DD\uD574\uC8FC\uC138\uC694.");
       this.candidates = compiled.map((candidate) => peopleImportMetadataForCandidate(scope, candidate, compiled));
       for (const candidate of this.candidates) if (!candidate.ambiguous) this.selected.add(candidate.id);
       this.phase = "review";
-      this.stage = keywords.length && !compiled.length ? "\uC120\uD0DD\uD55C \uB85C\uC5B4\uBD81\uC5D0\uC11C \uAC80\uC0C9\uC5B4\uC640 \uC77C\uCE58\uD558\uB294 \uC778\uBB3C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uD6C4\uBCF4 \uC120\uD0DD";
+      this.stage = this.failedPeople.length ? `\uD6C4\uBCF4 \uC120\uD0DD \xB7 ${this.failedPeople.length}\uBA85 \uC2E4\uD328` : keywords.length && !compiled.length ? "\uC120\uD0DD\uD55C \uB85C\uC5B4\uBD81\uC5D0\uC11C \uAC80\uC0C9\uC5B4\uC640 \uC77C\uCE58\uD558\uB294 \uC778\uBB3C\uC774 \uC5C6\uC2B5\uB2C8\uB2E4." : "\uD6C4\uBCF4 \uC120\uD0DD";
       this.finish();
       return this.status();
     } catch (error) {
@@ -6436,6 +6445,57 @@ function planPeopleBatches(items, { max = 4, limit = PEOPLE_IMPORT_LIMITS.chunkC
   if (cur.length) batches.push(cur);
   return { batches, single };
 }
+PeopleImportController.prototype.compileEach = async function(list, compileOne) {
+  this.failedPeople = this.failedPeople || [];
+  const out = [];
+  this.stage = "\uC131\uACA9 \uD504\uB85C\uD544 \uB9CC\uB4E4\uAE30";
+  this.completed = 0;
+  this.total = list.length;
+  this.emit();
+  let firstError = null;
+  for (let index = 0; index < list.length; index++) {
+    if (this.cancelRequested || this.abortController?.signal.aborted) throw Object.assign(new Error("People import cancelled"), { code: "model-aborted" });
+    try {
+      out.push(await compileOne(list[index]));
+    } catch (error) {
+      if (this.cancelRequested || error?.code === "model-aborted" || this.abortController?.signal.aborted) throw error;
+      firstError = firstError || error;
+      this.failedPeople.push({ person: list[index], error: peopleImportText(error?.message || String(error), 300) });
+    }
+    this.completed = index + 1;
+    this.emit();
+  }
+  if (!out.length && firstError) throw firstError;
+  return out;
+};
+PeopleImportController.prototype.retryFailed = async function() {
+  if (this.phase !== "review" || this.applying || !this.retryCtx || !this.failedPeople?.length) return this.status();
+  const ctx = this.retryCtx, todo = this.failedPeople.map((f) => f.person), keepCandidates = this.candidates, keepSelected = new Set(this.selected), token = this.scopeToken, validation = this.sourceValidation;
+  this.begin("\uC2E4\uD328\uD55C \uC778\uBB3C \uB2E4\uC2DC \uB9CC\uB4E4\uAE30", todo.length);
+  this.scopeToken = token;
+  this.sourceValidation = validation;
+  this.retryCtx = ctx;
+  try {
+    const compiled = await this.compileEach(todo, ctx.compileOne).catch((e) => {
+      if (e?.code === "model-aborted") throw e;
+      return [];
+    });
+    const all = [...keepCandidates, ...compiled];
+    this.candidates = all.map((c) => peopleImportMetadataForCandidate(ctx.scope, c, all));
+    for (const id of keepSelected) this.selected.add(id);
+    for (const c of this.candidates.slice(keepCandidates.length)) if (!c.ambiguous) this.selected.add(c.id);
+    this.phase = "review";
+    this.stage = this.failedPeople.length ? `\uD6C4\uBCF4 \uC120\uD0DD \xB7 ${this.failedPeople.length}\uBA85 \uC2E4\uD328` : "\uD6C4\uBCF4 \uC120\uD0DD";
+  } catch (error) {
+    this.candidates = keepCandidates;
+    for (const id of keepSelected) this.selected.add(id);
+    this.failedPeople = todo.map((person) => ({ person, error: "\uCDE8\uC18C\uB428" }));
+    this.phase = "review";
+    this.stage = `\uD6C4\uBCF4 \uC120\uD0DD \xB7 ${todo.length}\uBA85 \uC2E4\uD328`;
+  }
+  this.finish();
+  return this.status();
+};
 PeopleImportController.prototype.runCharacters = async function(documentIds, { max = 4, nsfw = false } = {}) {
   const nsfwById = {};
   if (this.phase === "running" || this.applying) return { made: [], failed: [] };
@@ -9333,7 +9393,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.17" : "dev";
+var ENGINE_VERSION = true ? "2.2.19" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
