@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.19 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.20 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -2258,7 +2258,7 @@ var NSFW_STAGE1 = [
   "sexval|Name|eroticInterest, sexualSpontaneity, sexualOpenness or sexualMomentum|+1..+10 or -1..-10|exact quote      a clear change in that sexual trait shown in newest",
   "act|Name|partner|sex, climax, kiss or touch|Korean positions/plays used, comma separated      one per character and partner",
   "sleep|Name",
-  "gauge|Name|lust or fatigue|+n or -n (max 30)|exact quote      something clearly pushes arousal or tiredness beyond normal (teasing, aphrodisiac, cold shower, exhaustion)",
+  "gauge|Name|lust or fatigue|+n or -n (max 30)|exact quote      arousal never rises on its own \u2014 YOU decide it: write lust when newest actually moves this character's arousal (flirting, sexual tension, touch, their own desire or kink being touched, aphrodisiac \u2192 up; awkwardness, upset, fear, interruption, cold shower \u2192 down). Size it to what happened (small hint +2..5, clear tease +6..12, strong +13..30). Nothing sexual happened \u2192 no lust line. fatigue: exhaustion or rest",
   "past|Name|partner|count|stated or estimated      they had sex before the story (newest, user message or lorebook); estimate the count when none is given",
   "zone|Name|Korean body part|1-3 (3 = weak spot)|short Korean note      a sexually sensitive spot shows",
   "trait|Name|first, fantasy, voice, after, yes, no or contra|short Korean phrase      first time, fantasy, bed voice, aftercare, signs of liking/refusing, contraception attitude",
@@ -8753,12 +8753,17 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
     return { groups, calls: groups.length, tokens: Math.round(chars / 1.5), total: ai.length, done: ai.length - todo.length, todo: todo.length, failed: todo.filter((i) => failedSet.has(hOf(i))).length };
   }
   const relayCall = (settings, signal) => async (msgs, pick) => run(msgs, { ...await modelOf(settings), noUserPrompts: true, ...pick?.timeoutSec ? { timeoutSec: pick.timeoutSec } : {} }, signal);
-  async function resumeServer({ signal } = {}) {
+  async function resumeServer({ signal, onProgress } = {}) {
     if (!server?.resume) return null;
     const idx = await store.getIndex();
     if (idx.settings?.serverAnalysis === false) return null;
-    const out = await server.resume({ relay: relayCall(idx.settings, signal), signal });
-    if (out?.job?.chaId) {
+    const pending = server.pendingResume ? await server.pendingResume() : void 0;
+    if (pending === null) return null;
+    const out = await aiTask("\uC9C0\uB09C \uB300\uD654 \uBD84\uC11D", (taskSignal) => {
+      const sg = anySignal(signal, taskSignal);
+      return server.resume({ relay: relayCall(idx.settings, sg), signal: sg, onProgress, ...pending ? { pending } : {} });
+    });
+    if (out?.job?.chaId && out.job.state !== "cancelled") {
       store.dropCache?.();
       await store.updateFolder(String(out.job.chaId), String(out.job.chatId), () => {
       }).catch(() => {
@@ -9393,7 +9398,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.19" : "dev";
+var ENGINE_VERSION = true ? "2.2.20" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
