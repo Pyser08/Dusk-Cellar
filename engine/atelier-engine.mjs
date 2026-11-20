@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.21 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.22 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -24,7 +24,20 @@ function hashText(text2, len = 200) {
   }
   return h.toString(16).padStart(8, "0");
 }
+var FTH = /* @__PURE__ */ new Map();
+var FTH_MAX = 2e4;
 function fullTextHash(text2) {
+  const raw = String(text2 ?? "");
+  const hit = FTH.get(raw);
+  if (hit !== void 0) return hit;
+  const out = fullTextHash0(raw);
+  if (raw.length >= 64) {
+    if (FTH.size >= FTH_MAX) FTH.delete(FTH.keys().next().value);
+    FTH.set(raw, out);
+  }
+  return out;
+}
+function fullTextHash0(text2) {
   const s = String(text2 ?? "").replace(/\s+/g, " ").trim();
   let a = 2166136261, b = 2654435769;
   for (let i = 0; i < s.length; i++) {
@@ -10550,7 +10563,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.21" : "dev";
+var ENGINE_VERSION = true ? "2.2.22" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
