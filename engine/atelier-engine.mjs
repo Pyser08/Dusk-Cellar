@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.26 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.27 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -255,20 +255,22 @@ function attrsForPrompt(person, n = 4) {
 var GAUGE_KEY = "dusk.gauge.mult";
 var GAUGE_MULT_MIN = 0;
 var GAUGE_MULT_MAX = 3;
-var GAUGE_DEFAULT = Object.freeze({ up: 1, down: 1, romUp: 1, romDown: 1, lust: 1 });
+var GAUGE_DEFAULT = Object.freeze({ up: 1, down: 1, romUp: 1, romDown: 1, negUp: 1, negDown: 1, lust: 1 });
 var ROMANCE_TAGS = Object.freeze(["attraction"]);
+var NEGATIVE_TAGS = Object.freeze(["hostility", "fear"]);
 var one = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(Math.max(GAUGE_MULT_MIN, Math.min(GAUGE_MULT_MAX, n)) * 10) / 10 : 1;
 };
 function normalizeGauge(v) {
   const s = v && typeof v === "object" ? v : {};
-  return { up: s.up == null ? 1 : one(s.up), down: s.down == null ? 1 : one(s.down), romUp: s.romUp == null ? s.up == null ? 1 : one(s.up) : one(s.romUp), romDown: s.romDown == null ? s.down == null ? 1 : one(s.down) : one(s.romDown), lust: s.lust == null ? 1 : one(s.lust) };
+  return { up: s.up == null ? 1 : one(s.up), down: s.down == null ? 1 : one(s.down), romUp: s.romUp == null ? s.up == null ? 1 : one(s.up) : one(s.romUp), romDown: s.romDown == null ? s.down == null ? 1 : one(s.down) : one(s.romDown), negUp: s.negUp == null ? s.up == null ? 1 : one(s.up) : one(s.negUp), negDown: s.negDown == null ? s.down == null ? 1 : one(s.down) : one(s.negDown), lust: s.lust == null ? 1 : one(s.lust) };
 }
 function scaleDelta(d, g, { max = Infinity, tag = null } = {}) {
   const n = Number(d);
   if (!Number.isFinite(n) || n === 0) return 0;
-  const rom = tag != null && ROMANCE_TAGS.includes(tag), m = normalizeGauge(g)[rom ? n > 0 ? "romUp" : "romDown" : n > 0 ? "up" : "down"];
+  const grp = tag == null ? "" : ROMANCE_TAGS.includes(tag) ? "rom" : NEGATIVE_TAGS.includes(tag) ? "neg" : "";
+  const m = normalizeGauge(g)[grp ? `${grp}${n > 0 ? "Up" : "Down"}` : n > 0 ? "up" : "down"];
   if (m === 1) return n;
   if (m === 0) return 0;
   const v = Math.max(1, Math.round(Math.abs(n) * m));
@@ -10564,7 +10566,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.26" : "dev";
+var ENGINE_VERSION = true ? "2.2.27" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
