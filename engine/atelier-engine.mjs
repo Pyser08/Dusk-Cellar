@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.25 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.26 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -255,19 +255,20 @@ function attrsForPrompt(person, n = 4) {
 var GAUGE_KEY = "dusk.gauge.mult";
 var GAUGE_MULT_MIN = 0;
 var GAUGE_MULT_MAX = 3;
-var GAUGE_DEFAULT = Object.freeze({ up: 1, down: 1, lust: 1 });
+var GAUGE_DEFAULT = Object.freeze({ up: 1, down: 1, romUp: 1, romDown: 1, lust: 1 });
+var ROMANCE_TAGS = Object.freeze(["attraction"]);
 var one = (v) => {
   const n = Number(v);
   return Number.isFinite(n) ? Math.round(Math.max(GAUGE_MULT_MIN, Math.min(GAUGE_MULT_MAX, n)) * 10) / 10 : 1;
 };
 function normalizeGauge(v) {
   const s = v && typeof v === "object" ? v : {};
-  return { up: s.up == null ? 1 : one(s.up), down: s.down == null ? 1 : one(s.down), lust: s.lust == null ? 1 : one(s.lust) };
+  return { up: s.up == null ? 1 : one(s.up), down: s.down == null ? 1 : one(s.down), romUp: s.romUp == null ? s.up == null ? 1 : one(s.up) : one(s.romUp), romDown: s.romDown == null ? s.down == null ? 1 : one(s.down) : one(s.romDown), lust: s.lust == null ? 1 : one(s.lust) };
 }
-function scaleDelta(d, g, { max = Infinity } = {}) {
+function scaleDelta(d, g, { max = Infinity, tag = null } = {}) {
   const n = Number(d);
   if (!Number.isFinite(n) || n === 0) return 0;
-  const m = normalizeGauge(g)[n > 0 ? "up" : "down"];
+  const rom = tag != null && ROMANCE_TAGS.includes(tag), m = normalizeGauge(g)[rom ? n > 0 ? "romUp" : "romDown" : n > 0 ? "up" : "down"];
   if (m === 1) return n;
   if (m === 0) return 0;
   const v = Math.max(1, Math.round(Math.abs(n) * m));
@@ -312,7 +313,7 @@ function applyEmo(folder, emos, anchor, now = Date.now(), { smooth = false, ceil
     for (let [tag, d] of Object.entries(e.t)) {
       if (LOVER_TAGS.includes(tag) && !lover) continue;
       if (gauge) {
-        d = scaleDelta(d, gauge, { max: STEP_MAX });
+        d = scaleDelta(d, gauge, { max: STEP_MAX, tag });
         if (!d) continue;
       }
       const guarded = userGuard && tag === "attraction" && d > 0 && key(e.to) === "{{user}}";
@@ -8272,7 +8273,7 @@ function sourAttraction(folder, anchor = null, now = Date.now(), { gauge = null,
     pr.sour = (pr.sour ?? 0) + 1;
     if (pr.sour < every) continue;
     pr.sour = 0;
-    const d = scaleDelta(-1, gauge);
+    const d = scaleDelta(-1, gauge, { tag: "attraction" });
     if (!d) continue;
     const before = t.attraction, v = Math.max(0, before + d);
     if (v === before) continue;
@@ -8327,7 +8328,7 @@ function addEvent(folder, ev) {
 var hasEvent = (folder, kind, a, b) => (folder?.romance?.events ?? []).some((e) => e.kind === kind && pairKey2(e.a, e.b) === pairKey2(a, b));
 function bump(folder, from, to, tag, d, why, at, now, gauge) {
   const k = key7(from) + ">" + key7(to), p = (folder.emo ??= {})[k] ??= { from, to, tags: {}, log: [] };
-  const step = scaleDelta(d, gauge);
+  const step = scaleDelta(d, gauge, { tag });
   if (!step) return 0;
   const before = p.tags[tag], v = Math.max(0, Math.min(10, (before ?? 0) + step));
   if (v === before) return 0;
@@ -10563,7 +10564,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.25" : "dev";
+var ENGINE_VERSION = true ? "2.2.26" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
