@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.22 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.23 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -10563,7 +10563,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.22" : "dev";
+var ENGINE_VERSION = true ? "2.2.23" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
