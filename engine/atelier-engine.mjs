@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.29 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.31 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -309,7 +309,7 @@ function applyEmo(folder, emos, anchor, now = Date.now(), { smooth = false, ceil
   const src = srcOf(anchor);
   let changed = 0;
   for (const e of emos ?? []) {
-    const k = key(e.from) + ">" + key(e.to), pair = folder.emo[k] ??= { from: e.from, to: e.to, tags: {}, log: [] };
+    const k = key(e.from) + ">" + key(e.to), pair2 = folder.emo[k] ??= { from: e.from, to: e.to, tags: {}, log: [] };
     const prev = {}, next = {};
     const lover = !!isLover2?.(e.from, e.to);
     for (let [tag, d] of Object.entries(e.t)) {
@@ -320,43 +320,43 @@ function applyEmo(folder, emos, anchor, now = Date.now(), { smooth = false, ceil
       }
       const guarded = userGuard && tag === "attraction" && d > 0 && key(e.to) === "{{user}}";
       if (guarded) d = Math.max(1, Math.floor(d / 2));
-      if (pair.lock?.[tag]) {
-        delete pair.lock[tag];
-        if (!Object.keys(pair.lock).length) delete pair.lock;
+      if (pair2.lock?.[tag]) {
+        delete pair2.lock[tag];
+        if (!Object.keys(pair2.lock).length) delete pair2.lock;
       }
       if (smooth || guarded) {
-        const pend = pair.pend?.[tag] ?? 0;
+        const pend = pair2.pend?.[tag] ?? 0;
         if (Math.abs(d) >= 2) {
-          if (pend) delete pair.pend[tag];
+          if (pend) delete pair2.pend[tag];
         } else if (pend && Math.sign(pend) !== Math.sign(d)) {
-          delete pair.pend[tag];
+          delete pair2.pend[tag];
           continue;
         } else if (pend) {
-          delete pair.pend[tag];
+          delete pair2.pend[tag];
         } else {
-          (pair.pend ??= {})[tag] = d;
+          (pair2.pend ??= {})[tag] = d;
           continue;
         }
       }
-      const before = pair.tags[tag];
+      const before = pair2.tags[tag];
       let v = clampG((before ?? 0) + d);
       if (d > 0 && ceilingOf && (tag === "affection" || tag === "trust" || guarded)) {
         const cap = ceilingOf(e.from, e.to);
         if (Number.isFinite(cap) && v > cap) v = Math.max(before ?? 0, cap);
       }
       if (d > 0 && attrCap && tag === "attraction") {
-        const cap = attrCap(e.from, e.to, { big: Math.abs(e.t[tag]) >= 3, tags: pair.tags, lover });
+        const cap = attrCap(e.from, e.to, { big: Math.abs(e.t[tag]) >= 3, tags: pair2.tags, lover });
         if (Number.isFinite(cap) && v > cap) v = Math.max(before ?? 0, cap);
       }
       if (v === before) continue;
       prev[tag] = before ?? null;
       next[tag] = v;
-      pair.tags[tag] = v;
+      pair2.tags[tag] = v;
       changed++;
     }
     if (Object.keys(next).length) {
-      pair.log.push({ t: next, from: prev, why: e.why, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {} });
-      if (pair.log.length > EMO_CAP) pair.log = pair.log.slice(-EMO_CAP);
+      pair2.log.push({ t: next, from: prev, why: e.why, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {} });
+      if (pair2.log.length > EMO_CAP) pair2.log = pair2.log.slice(-EMO_CAP);
     }
   }
   return changed;
@@ -382,11 +382,11 @@ function convertAffinity(folder, docs, userName, now = Date.now()) {
     const m = (d?.metrics ?? []).find((x) => x?.slotId === "affinity.score");
     const lo = Number(m?.minimum), hi = Number(m?.maximum), v = Number(m?.value);
     if (!m || ![lo, hi, v].every(Number.isFinite) || hi <= lo) continue;
-    const k = key(d.title) + ">" + key(userName), pair = folder.emo[k] ??= { from: d.title, to: userName, tags: {}, log: [] };
-    if (pair.tags.affection != null || folder.emoConv.some((c) => c.pair === k)) continue;
+    const k = key(d.title) + ">" + key(userName), pair2 = folder.emo[k] ??= { from: d.title, to: userName, tags: {}, log: [] };
+    if (pair2.tags.affection != null || folder.emoConv.some((c) => c.pair === k)) continue;
     const val = clampG((v - lo) / (hi - lo) * GAUGE_MAX);
-    pair.tags.affection = val;
-    pair.log.push({ t: { affection: val }, from: { affection: null }, why: "converted", at: null, at_ms: now });
+    pair2.tags.affection = val;
+    pair2.log.push({ t: { affection: val }, from: { affection: null }, why: "converted", at: null, at_ms: now });
     folder.emoConv.push({ pair: k, from: "affinity.score", value: v, min: lo, max: hi, to: { affection: val }, at_ms: now });
     n++;
   }
@@ -671,14 +671,14 @@ function reconcile(folder, messages, index = null) {
     it.hs = it.hs.filter((s) => srcAlive(s, idx));
     it.m = Math.max(1, (it.m0 ?? 0) + it.hs.length);
   }
-  for (const pair of Object.values(folder.emo ?? {})) {
-    for (let i = (pair.log ?? []).length - 1; i >= 0; i--) {
-      const e = pair.log[i];
+  for (const pair2 of Object.values(folder.emo ?? {})) {
+    for (let i = (pair2.log ?? []).length - 1; i >= 0; i--) {
+      const e = pair2.log[i];
       if (e.orphan || !hasSrc(e.src) || srcAlive(e.src, idx)) continue;
       e.orphan = true;
-      for (const [tag, v] of Object.entries(e.t ?? {})) if (pair.tags[tag] === v && !pair.lock?.[tag]) {
-        if (e.from?.[tag] == null) delete pair.tags[tag];
-        else pair.tags[tag] = e.from[tag];
+      for (const [tag, v] of Object.entries(e.t ?? {})) if (pair2.tags[tag] === v && !pair2.lock?.[tag]) {
+        if (e.from?.[tag] == null) delete pair2.tags[tag];
+        else pair2.tags[tag] = e.from[tag];
       }
     }
   }
@@ -776,7 +776,6 @@ var LINES_STAGE1_MIN = "Reply with lines only. First: scene|1-2 sentence summary
 var SUBJ = "the focus character";
 function stage2Rules(N, { light, beliefs, wiki, extraLines }) {
   const r = ["Check first:"];
-  if (wiki) r.push(`like|+1 +2 +3 or -1 -2 -3|exact quote      how ${N}'s feeling toward {{user}} moved in newest (1 slight, 2 clear, 3 strong). Omit if it did not move.`);
   r.push(`to|Other|warm or cold or same|deed|exact quote      how ${N} treated Other (max 3 lines). deed: help attack confess refuse promise apologize touch flirt jealous none (touch/flirt = romantic or sexual; jealous only between lovers)`);
   r.push(`   Other can be ANY character, not only {{user}} \u2014 write romantic pull between other characters too. Judge it by ${N}'s own taste and the real chemistry: {{user}} is not special; never mark flirt/confess/touch toward {{user}} unless newest clearly shows ${N} doing it for a reason that fits ${N}.`);
   if (wiki) r.push(`now|${N}'s relationship with {{user}} right now, one sentence      only if it changed; it replaces card.relationship`);
@@ -799,7 +798,7 @@ function stage2Rules(N, { light, beliefs, wiki, extraLines }) {
   return r;
 }
 var NEW_LINES = (N) => ["id|basic profile: role, looks, affiliation, age (stated facts only; unknown = \uBBF8\uD655\uC778)", `first|${N}'s first impression of {{user}}, one sentence`, "profile|one-line personality|trait1,trait2|what they value"];
-var EXAMPLE = (wiki) => `${wiki ? "like|+2|\uD568\uAED8 \uAC00\uC790\uACE0 \uC190\uC744 \uC7A1\uC558\uB2E4\nnow|{{user}}\uB97C \uBBFF\uC744 \uC218 \uC788\uB294 \uB3D9\uB8CC\uB85C \uC5EC\uAE30\uAE30 \uC2DC\uC791\uD588\uB2E4\n" : ""}to|{{user}}|warm|help|\uD568\uAED8 \uAC00\uC790\uACE0 \uC190\uC744 \uC7A1\uC558\uB2E4
+var EXAMPLE = (wiki) => `${wiki ? "now|{{user}}\uB97C \uBBFF\uC744 \uC218 \uC788\uB294 \uB3D9\uB8CC\uB85C \uC5EC\uAE30\uAE30 \uC2DC\uC791\uD588\uB2E4\n" : ""}to|{{user}}|warm|help|\uD568\uAED8 \uAC00\uC790\uACE0 \uC190\uC744 \uC7A1\uC558\uB2E4
 call|{{user}}|\uC120\uBC30|casual
 keys|\uC5F4\uC1E0,\uC625\uC0C1`;
 function linesStage2(_name, { light = false, beliefs = false, wiki = false, isNew = false, extraLines = [] } = {}) {
@@ -1259,6 +1258,79 @@ function canonNameKo(name, known = [], extra = []) {
   return hit.length === 1 ? hit[0].name : r;
 }
 
+// src/engine/ties.js
+var TIE_GROUPS = Object.freeze([["fam", "\uAC00\uC871\xB7\uD63C\uC778"], ["love", "\uC5F0\uC560"], ["friend", "\uCE5C\uAD6C"], ["team", "\uC18C\uC18D\xB7\uB3D9\uB8CC"], ["rank", "\uC704\uACC4\xB7\uC8FC\uC885"], ["deal", "\uACC4\uC57D\xB7\uAC70\uB798"], ["foe", "\uB300\uB9BD"], ["etc", "\uAE30\uD0C0"]]);
+var TIE_KINDS = Object.freeze([
+  { id: "parent", g: "fam", ko: "\uBD80\uBAA8\xB7\uC790\uC2DD", floor: 2, up: ["\uBD80\uBAA8", "\uC790\uC2DD"], re: /parent|child|부모|자식|엄마|아빠|어머니|아버지|딸|아들|mother|father|daughter|son\b/ },
+  { id: "sibling", g: "fam", ko: "\uD615\uC81C\uC790\uB9E4", floor: 2, up: ["\uC190\uC704", "\uC190\uC544\uB798"], re: /sibling|sister|brother|형제|자매|남매|언니|오빠|누나|동생/ },
+  { id: "twin", g: "fam", ko: "\uC30D\uB465\uC774", floor: 2, re: /twin|쌍둥이/ },
+  { id: "spouse", g: "fam", ko: "\uBD80\uBD80", floor: 2, re: /spouse|부부|배우자|husband|wife|married|아내|남편/ },
+  { id: "fiance", g: "fam", ko: "\uC57D\uD63C", floor: 2, re: /fianc|약혼|정혼|betroth/ },
+  { id: "inlaw", g: "fam", ko: "\uC778\uCC99", floor: 1, re: /in-?law|인척|시댁|처가|사돈|며느리|사위|시누|처제/ },
+  { id: "relative", g: "fam", ko: "\uCE5C\uCC99", floor: 1, re: /relative|cousin|aunt|uncle|niece|nephew|친척|사촌|이모|고모|삼촌|조카/ },
+  { id: "family", g: "fam", ko: "\uAC00\uC871", floor: 2, re: /family|가족|식구/ },
+  { id: "adopted", g: "fam", ko: "\uC785\uC591 \uAC00\uC871", floor: 2, up: ["\uC591\uBD80\uBAA8", "\uC591\uC790"], re: /adopt|입양|양부|양모|양녀|양자/ },
+  { id: "sworn", g: "fam", ko: "\uC758\uD615\uC81C", floor: 2, re: /sworn|의형제|의자매|의남매/ },
+  { id: "ex", g: "love", ko: "\uC804 \uC5F0\uC778", floor: 1, re: /\bex\b|ex-|전 ?애인|전 ?연인|전 ?남친|전 ?여친|헤어진|전처|전남편/ },
+  { id: "dating", g: "love", ko: "\uC5F0\uC778", floor: 2, re: /dating|lover|girlfriend|boyfriend|연인|애인|사귀/ },
+  { id: "arranged", g: "love", ko: "\uC815\uB7B5", floor: 1, re: /arranged|정략/ },
+  { id: "fwb", g: "love", ko: "\uBAB8\uB9CC \uC544\uB294 \uC0AC\uC774", floor: 1, re: /fwb|friends with benefits|섹스 ?프렌드|섹프|파트너 관계/ },
+  { id: "childhood", g: "friend", ko: "\uC18C\uAFC9\uCE5C\uAD6C", floor: 2, re: /childhood|소꿉/ },
+  { id: "bestfriend", g: "friend", ko: "\uB2E8\uC9DD", floor: 2, re: /best ?friend|bff|단짝|절친|베프/ },
+  { id: "friend", g: "friend", ko: "\uCE5C\uAD6C", floor: 1, re: /friend|친구|벗/ },
+  { id: "penpal", g: "friend", ko: "\uC628\uB77C\uC778 \uCE5C\uAD6C", floor: 1, re: /pen ?pal|online|온라인|채팅 ?친구|게임 ?친구/ },
+  { id: "party", g: "team", ko: "\uD30C\uD2F0", floor: 1, re: /party|파티|모험|adventur/ },
+  { id: "guild", g: "team", ko: "\uAE38\uB4DC\xB7\uC870\uC9C1", floor: 1, re: /guild|clan|order|organi[sz]ation|길드|조직|기사단|교단|클랜|문파/ },
+  { id: "squad", g: "team", ko: "\uC804\uC6B0", floor: 1, re: /squad|soldier|army|전우|부대|소대|분대/ },
+  { id: "coworker", g: "team", ko: "\uC9C1\uC7A5 \uB3D9\uB8CC", floor: 1, re: /cowork|직장|회사|colleague|office/ },
+  { id: "comrade", g: "team", ko: "\uB3D9\uB8CC", floor: 1, re: /comrade|ally|동료|teammate|팀원|동지/ },
+  { id: "classmate", g: "team", ko: "\uB3D9\uAE09\uC0DD", floor: 1, re: /classmate|동급생|반 ?친구|같은 반|동기/ },
+  { id: "club", g: "team", ko: "\uB3D9\uC544\uB9AC", floor: 1, re: /club|동아리|부원|서클/ },
+  { id: "band", g: "team", ko: "\uD300\xB7\uADF8\uB8F9 \uBA64\uBC84", floor: 1, re: /band|idol group|member|멤버|그룹|밴드/ },
+  { id: "senior", g: "rank", ko: "\uC120\uD6C4\uBC30", floor: 1, up: ["\uC120\uBC30", "\uD6C4\uBC30"], re: /senior|junior|선배|후배|선후배/ },
+  { id: "boss", g: "rank", ko: "\uC0C1\uC0AC\xB7\uBD80\uD558", floor: 1, up: ["\uC0C1\uC0AC", "\uBD80\uD558"], re: /boss|superior|subordinate|상사|부하|상관/ },
+  { id: "master", g: "rank", ko: "\uC8FC\uC885", floor: 1, up: ["\uC8FC\uC778", "\uC885\uC790"], re: /master|servant|maid|butler|주종|주인|하인|메이드|집사|retainer/ },
+  { id: "lord", g: "rank", ko: "\uAD70\uC2E0", floor: 1, up: ["\uAD70\uC8FC", "\uC2E0\uD558"], re: /lord|vassal|king|queen|ruler|subject|군신|군주|신하|왕|영주|기사 ?서약/ },
+  { id: "guard", g: "rank", ko: "\uD638\uC704", floor: 1, up: ["\uD638\uC704 \uB300\uC0C1", "\uD638\uC704"], re: /guard|bodyguard|escort|호위|경호/ },
+  { id: "mentor", g: "rank", ko: "\uC0AC\uC81C", floor: 1, up: ["\uC2A4\uC2B9", "\uC81C\uC790"], re: /mentor|teacher|student|disciple|apprentice|사제|스승|제자|선생/ },
+  { id: "guardian", g: "rank", ko: "\uBCF4\uD638\uC790", floor: 1, up: ["\uBCF4\uD638\uC790", "\uD53C\uBCF4\uD638\uC790"], re: /guardian|ward|보호자|후견/ },
+  { id: "familiar", g: "rank", ko: "\uACC4\uC57D \uC18C\uD658", floor: 1, up: ["\uC18C\uD658\uC790", "\uC0AC\uC5ED\uB9C8"], re: /familiar|summon|사역마|소환|권속|계약수/ },
+  { id: "captor", g: "rank", ko: "\uD3EC\uB85C", floor: 0, up: ["\uBD99\uC7A1\uC740 \uCABD", "\uD3EC\uB85C"], re: /captor|captive|prisoner|hostage|포로|인질|감금/ },
+  { id: "employer", g: "deal", ko: "\uACE0\uC6A9", floor: 1, up: ["\uACE0\uC6A9\uC8FC", "\uACE0\uC6A9\uC778"], re: /employ|hire|고용|용병|mercenary/ },
+  { id: "client", g: "deal", ko: "\uC758\uB8B0", floor: 1, up: ["\uC758\uB8B0\uC778", "\uD574\uACB0\uC0AC"], re: /client|commission|의뢰/ },
+  { id: "doctor", g: "deal", ko: "\uC758\uC0AC\xB7\uD658\uC790", floor: 1, up: ["\uC758\uC0AC", "\uD658\uC790"], re: /doctor|patient|healer|의사|환자|치료사/ },
+  { id: "landlord", g: "deal", ko: "\uC9D1\uC8FC\uC778\xB7\uC138\uC785\uC790", floor: 1, up: ["\uC9D1\uC8FC\uC778", "\uC138\uC785\uC790"], re: /landlord|tenant|집주인|세입자|하숙/ },
+  { id: "partner", g: "deal", ko: "\uC0AC\uC5C5 \uD30C\uD2B8\uB108", floor: 1, re: /business|사업|동업/ },
+  { id: "contract", g: "deal", ko: "\uACC4\uC57D", floor: 1, re: /contract|계약|pact|맹약/ },
+  { id: "debt", g: "deal", ko: "\uBE5A", floor: 0, up: ["\uBE4C\uB824\uC900 \uCABD", "\uBE5A\uC9C4 \uCABD"], re: /debt|loan|빚|채권|채무/ },
+  { id: "rival", g: "foe", ko: "\uB77C\uC774\uBC8C", floor: 1, re: /rival|라이벌|경쟁/ },
+  { id: "nemesis", g: "foe", ko: "\uC219\uC801", floor: 0, re: /nemesis|archenemy|숙적|원수/ },
+  { id: "enemy", g: "foe", ko: "\uC801", floor: 0, re: /enemy|foe|적대|^적$/ },
+  { id: "target", g: "foe", ko: "\uCD94\uC801\xB7\uD45C\uC801", floor: 0, up: ["\uCAD3\uB294 \uCABD", "\uCAD3\uAE30\uB294 \uCABD"], re: /hunter|hunted|target|bounty|추적|표적|현상금/ },
+  { id: "roommate", g: "etc", ko: "\uB3D9\uAC70\uC778", floor: 1, re: /roommate|housemate|동거|룸메/ },
+  { id: "neighbor", g: "etc", ko: "\uC774\uC6C3", floor: 0, re: /neighbo|이웃/ },
+  { id: "savior", g: "etc", ko: "\uC740\uC778", floor: 1, up: ["\uC740\uC778", "\uB3C4\uC6C0\uBC1B\uC740 \uCABD"], re: /savior|saviour|benefactor|은인|목숨을 구/ },
+  { id: "fan", g: "etc", ko: "\uD32C", floor: 0, up: ["\uC2A4\uD0C0", "\uD32C"], re: /fan|idol|팬|아이돌|추종/ },
+  { id: "regular", g: "etc", ko: "\uB2E8\uACE8", floor: 1, up: ["\uAC00\uAC8C \uC8FC\uC778", "\uB2E8\uACE8"], re: /regular|customer|shopkeeper|단골|손님|가게/ },
+  { id: "acquaint", g: "etc", ko: "\uC9C0\uC778", floor: 1, re: /acquaint|지인|아는 사이/ }
+]);
+var TIE_BY_ID = Object.freeze(Object.fromEntries(TIE_KINDS.map((k) => [k.id, k])));
+var nk0 = (s) => String(s ?? "").normalize("NFC").toLowerCase().replace(/\s+/g, "");
+function tiesBetween(ties, a, b, K = nk0) {
+  const ka = K(a), kb = K(b);
+  const e = Object.values(ties ?? {}).find((x) => {
+    const xa = K(x.a), xb = K(x.b);
+    return xa === ka && xb === kb || xa === kb && xb === ka;
+  });
+  if (!e) return [];
+  return Object.entries(e.kinds ?? {}).filter(([id]) => TIE_BY_ID[id]).map(([id, v]) => {
+    const kd = TIE_BY_ID[id], upK = v.up ? K(v.up) : "";
+    const role = kd.up && upK ? upK === kb ? kd.up[0] : upK === ka ? kd.up[1] : "" : "";
+    return { id, ko: kd.ko, role, up: v.up ?? "", floor: kd.floor, label: role ? `${kd.ko}(${role})` : kd.ko, at: v.at };
+  }).sort((x, y) => y.floor - x.floor);
+}
+var tieFloor = (ties, a, b, K) => Math.max(0, ...tiesBetween(ties, a, b, K).map((t) => t.floor));
+
 // src/engine/memoryhuman.js
 var cut4 = (v, n) => String(v ?? "").trim().slice(0, n);
 var key3 = (n) => String(n ?? "").toLowerCase().replace(/\s+/g, "");
@@ -1304,20 +1376,20 @@ var rid = (p) => p + "_" + Date.now().toString(36) + Math.random().toString(36).
 var has = (rel, name) => !rel || rel.has(key3(name));
 var COOL_HALF = Object.freeze({ hostility: 80, fear: 120, dependence: 240, affection: 400, attraction: 300, possess: 200, exclusive: 200 });
 var COOL_FLOOR = Object.freeze({ hostility: 0.3, fear: 0.3, dependence: 0.5, affection: 0.6, attraction: 0.5, possess: 0.4, exclusive: 0.4 });
-function lastRealChange(pair, tag) {
-  for (let i = (pair.log ?? []).length - 1; i >= 0; i--) {
-    const e = pair.log[i];
+function lastRealChange(pair2, tag) {
+  for (let i = (pair2.log ?? []).length - 1; i >= 0; i--) {
+    const e = pair2.log[i];
     if (e.orphan || e.why === "cooled" || e.t?.[tag] == null) continue;
     return e.at == null ? null : { v: e.t[tag], at: e.at };
   }
   return null;
 }
-function effectiveTags(pair, now) {
+function effectiveTags(pair2, now) {
   const out = {};
-  for (const [tag, v] of Object.entries(pair?.tags ?? {})) {
+  for (const [tag, v] of Object.entries(pair2?.tags ?? {})) {
     out[tag] = v;
     if (v == null || !COOL_HALF[tag] || !Number.isFinite(now)) continue;
-    const base = lastRealChange(pair, tag);
+    const base = lastRealChange(pair2, tag);
     if (!base || now <= base.at) continue;
     const floor = Math.round(base.v * COOL_FLOOR[tag]);
     const eff = Math.round(floor + (base.v - floor) * Math.pow(0.5, (now - base.at) / COOL_HALF[tag]));
@@ -1327,16 +1399,16 @@ function effectiveTags(pair, now) {
 }
 function coolEmo(folder, now, nowMs = Date.now()) {
   let n = 0;
-  for (const pair of Object.values(folder?.emo ?? {})) {
-    const eff = effectiveTags(pair, now), t = {}, from = {};
-    for (const [tag, v] of Object.entries(eff)) if (v < pair.tags[tag]) {
-      from[tag] = pair.tags[tag];
+  for (const pair2 of Object.values(folder?.emo ?? {})) {
+    const eff = effectiveTags(pair2, now), t = {}, from = {};
+    for (const [tag, v] of Object.entries(eff)) if (v < pair2.tags[tag]) {
+      from[tag] = pair2.tags[tag];
       t[tag] = v;
-      pair.tags[tag] = v;
+      pair2.tags[tag] = v;
       n++;
     }
     if (Object.keys(t).length) {
-      pair.log = [...pair.log ?? [], { t, from, why: "cooled", at: now, at_ms: nowMs }].slice(-40);
+      pair2.log = [...pair2.log ?? [], { t, from, why: "cooled", at: now, at_ms: nowMs }].slice(-40);
     }
   }
   return n;
@@ -1351,10 +1423,10 @@ function stageOf(folder, a, b, now) {
     const t = effectiveTags(p, now);
     warmth = Math.max(warmth, t.affection ?? 0, t.trust ?? 0);
   }
-  const pair = (x, y) => K(x) === ka && K(y) === kb || K(x) === kb && K(y) === ka;
-  let evidence = (folder?.bonds ?? []).filter((x) => pair(x.a, x.b)).length;
-  for (const r of Object.values(folder?.rels ?? {})) if (pair(r.from, r.to)) evidence += (r.items ?? []).filter((i) => !i.orphan).length;
-  if (Object.values(folder?.talk ?? {}).some((t) => pair(t.from, t.to) && t.tone === "casual")) evidence += 2;
+  const pair2 = (x, y) => K(x) === ka && K(y) === kb || K(x) === kb && K(y) === ka;
+  let evidence = (folder?.bonds ?? []).filter((x) => pair2(x.a, x.b)).length;
+  for (const r of Object.values(folder?.rels ?? {})) if (pair2(r.from, r.to)) evidence += (r.items ?? []).filter((i) => !i.orphan).length;
+  if (Object.values(folder?.talk ?? {}).some((t) => pair2(t.from, t.to) && t.tone === "casual")) evidence += 2;
   let hostile = 0;
   for (const p of Object.values(folder?.emo ?? {})) {
     const pf = K(p.from), pt = K(p.to);
@@ -1366,7 +1438,7 @@ function stageOf(folder, a, b, now) {
   let stage = shared + evidence <= 1 && warmth < 3 ? "just met" : shared < 5 && !(shared >= 3 && warmth >= 7) || warmth < 4 ? "acquaintances" : warmth < 7 ? "close" : "very close";
   if (hostile > warmth && (stage === "close" || stage === "very close")) stage = "acquaintances";
   const floor = (folder?.start?.[[key3(a), key3(b)].sort().join("|")] ?? folder?.start?.[[ka, kb].sort().join("|")])?.level;
-  const RANK = ["just met", "acquaintances", "close", "very close"], min = floor === "close" ? 2 : floor === "friendly" ? 1 : 0;
+  const RANK = ["just met", "acquaintances", "close", "very close"], min = Math.max(floor === "close" ? 2 : floor === "friendly" ? 1 : 0, tieFloor(folder?.extra?.ties, a, b, K));
   return { stage: RANK[Math.max(RANK.indexOf(stage), min)], shared, warmth };
 }
 var STAGE_CEILING = Object.freeze({ "just met": 5, acquaintances: 7, close: 9, "very close": 10 });
@@ -1820,12 +1892,12 @@ function applyRel(folder, rels, anchor, now = Date.now()) {
   let n = 0;
   const src = srcOf(anchor);
   for (const r of rels ?? []) {
-    const k = key4(r.from) + ">" + key4(r.to), pair = folder.rels[k] ??= { from: r.from, to: r.to, items: [] };
-    const last = pair.items.filter((i) => !i.orphan).at(-1);
+    const k = key4(r.from) + ">" + key4(r.to), pair2 = folder.rels[k] ??= { from: r.from, to: r.to, items: [] };
+    const last = pair2.items.filter((i) => !i.orphan).at(-1);
     if (last && similarity(last.d, r.d) >= 0.8) continue;
-    pair.items.push({ d: r.d, dir: r.dir, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {} });
+    pair2.items.push({ d: r.d, dir: r.dir, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {} });
     n++;
-    if (pair.items.length > REL_CAP) pair.items = pair.items.slice(-REL_CAP);
+    if (pair2.items.length > REL_CAP) pair2.items = pair2.items.slice(-REL_CAP);
   }
   return n;
 }
@@ -2225,6 +2297,39 @@ var DRIVE_STAGE1 = [
   "done|Actor|Target|reached or dropped      Actor got what they wanted in newest, or clearly gave it up"
 ].join("\n");
 
+// src/engine/memedit.js
+var k1 = (s) => String(s ?? "").replace(/\s+/g, "").toLowerCase();
+var KEYS = {
+  told: (r) => [r.from, r.to, r.info],
+  goal: (r) => [r.name, r.goal],
+  status: (r) => [r.name, r.effect],
+  mark: (r) => [r.name, r.part, r.desc],
+  place: (r) => [r.name],
+  item: (r) => [r.name],
+  faction: (r) => [r.name],
+  bond: (r) => [pair(r.a, r.b), r.moment],
+  rift: (r) => [pair(r.a, r.b), r.about],
+  belief: (r) => [r.who, r.thinks],
+  bday: (r) => [r.name],
+  couple: (r) => [r.name],
+  plan: (r) => [r.md, r.what],
+  day: (r) => [r.md, r.name],
+  hol: (r) => [r.from, r.name]
+};
+var pair = (a, b) => [k1(a), k1(b)].sort().join("+");
+function ignoreKeyOf(r) {
+  const f = KEYS[r?.kind];
+  return f ? [r.kind, ...f(r).map(k1)].join("|") : null;
+}
+function isIgnored(f, key9, turn = 0) {
+  return !!key9 && Array.isArray(f?.ignore) && f.ignore.some((x) => x.k === key9 && (x.until == null || turn < x.until));
+}
+function filterHuman(f, hm, turn = 0) {
+  if (!hm || !Array.isArray(f?.ignore) || !f.ignore.length) return hm;
+  const keep = (kind) => (arr) => Array.isArray(arr) ? arr.filter((x) => !isIgnored(f, ignoreKeyOf({ ...x, kind }), turn)) : arr;
+  return { ...hm, bond: keep("bond")(hm.bond), rift: keep("rift")(hm.rift), belief: keep("belief")(hm.belief) };
+}
+
 // src/engine/humanitems.js
 var HUMAN_FIELDS = Object.freeze([
   ["speech", "\uB9D0\uBC84\uB987", true],
@@ -2260,6 +2365,10 @@ var BODY_PARTS = Object.freeze([
   { id: "womb", label: "\uC790\uAD81", side: "f", sex: "f", x: 50, y: 90, re: /자궁|포르치오|womb|uterus|cervix/i },
   { id: "clit", label: "\uD074\uB9AC\uD1A0\uB9AC\uC2A4", side: "f", sex: "f", x: 50, y: 102.4, re: /클리|음핵|clit/i },
   { id: "vagina", label: "\uC9C8", side: "f", sex: "f", x: 50, y: 106.4, re: /^질|질\s*(입구|안|속|벽|내)|vagina/i },
+  // 남성 부위(sex:"m" — 남성 모형에만)
+  { id: "glans", label: "\uADC0\uB450", side: "f", sex: "m", x: 50, y: 110.4, re: /귀두|glans/i },
+  { id: "penis", label: "\uC74C\uACBD", side: "f", sex: "m", x: 50, y: 104.6, re: /음경|자지|페니스|penis|cock|shaft/i },
+  { id: "testicles", label: "\uACE0\uD658", side: "f", sex: "m", x: 56.4, y: 107.4, re: /고환|불알|음낭|testic|scrot|balls/i },
   { id: "groin", label: "\uC0AC\uD0C0\uAD6C\uB2C8", side: "f", x: 44.6, y: 103, re: /사타구니|음부|성기|groin|genital/ },
   { id: "thighs", label: "\uD5C8\uBC85\uC9C0 \uC548\uCABD", side: "f", x: 44, y: 122, re: /허벅지|thigh/ },
   { id: "hands", label: "\uC190\xB7\uC190\uAC00\uB77D", side: "f", x: 22, y: 94, re: /손|손가락|hand|finger/ },
@@ -2268,6 +2377,7 @@ var BODY_PARTS = Object.freeze([
   { id: "back", label: "\uB4F1", side: "b", x: 50, y: 55, re: /^등|등줄기|척추|back|spine/ },
   { id: "lowback", label: "\uD5C8\uB9AC \uB4A4", side: "b", x: 50, y: 84, re: /허리 ?뒤|꼬리뼈|lower back/ },
   { id: "butt", label: "\uC5C9\uB369\uC774", side: "b", x: 50, y: 100, re: /엉덩이|둔부|butt|ass/ },
+  { id: "prostate", label: "\uC804\uB9BD\uC120", side: "b", sex: "m", x: 56, y: 104, re: /전립선|prostate/i },
   { id: "anus", label: "\uD56D\uBB38", side: "b", x: 50, y: 107, re: /항문|애널|anal|anus/ },
   { id: "knees", label: "\uBB34\uB98E \uB4A4", side: "b", x: 43, y: 150, re: /무릎|오금|knee/ },
   // 0.3.22 종족 부위(race: 그 몸 특징이 있는 종족 모형에만 찍힌다). 허리 뒤(꼬리뼈)보다 뒤에 둬서 '꼬리뼈'는 허리 뒤로
@@ -2296,6 +2406,10 @@ var ZONE_BANK = Object.freeze({
   womb: { f: ["\uAE4A\uC774 \uB2FF\uC744 \uB54C\uB9C8\uB2E4 \uC544\uB7AB\uBC30\uAC00 \uC870\uC5EC \uC628\uB2E4", "\uC548\uCABD \uB05D\uC744 \uB204\uB974\uBA74 \uBAB8\uC774 \uB5A8\uB9AC\uBA70 \uD798\uC774 \uD480\uB9B0\uB2E4"], s: [["\uC790\uAD81 \uC785\uAD6C(\uD3EC\uB974\uCE58\uC624)", 0, 2], ["\uC544\uB7AB\uBC30 \uC548\uCABD \uAE4A\uC740 \uACF3", 0, -2]] },
   clit: { f: ["\uC0B4\uC9DD\uB9CC \uC2A4\uCCD0\uB3C4 \uD5C8\uB9AC\uAC00 \uD284\uB2E4", "\uCC9C\uCC9C\uD788 \uC6D0\uC744 \uADF8\uB9AC\uBA74 \uAE08\uBC29 \uBB34\uB108\uC9C4\uB2E4", "\uC9C1\uC811 \uB2FF\uC73C\uBA74 \uB108\uBB34 \uC608\uBBFC\uD574 \uBAB8\uC744 \uBE44\uD2BC\uB2E4"], s: [["\uD074\uB9AC\uD1A0\uB9AC\uC2A4 \uB05D", 0, 0], ["\uD074\uB9AC\uD1A0\uB9AC\uC2A4 \uBC14\uB85C \uC704", 0, -1.4]] },
   vagina: { f: ["\uC785\uAD6C\uB97C \uC4F8\uAE30\uB9CC \uD574\uB3C4 \uC816\uC5B4 \uB4E0\uB2E4", "\uC548\uCABD \uC55E\uBCBD\uC744 \uB204\uB974\uBA74 \uC18C\uB9AC\uB97C \uCC38\uC9C0 \uBABB\uD55C\uB2E4", "\uC870\uAE08\uC529 \uAE4A\uC5B4\uC9C8\uC218\uB85D \uB9E4\uB2EC\uB9B0\uB2E4"], s: [["\uC9C8 \uC785\uAD6C", 0, 0.6], ["\uC548\uCABD \uC55E\uBCBD(G\uC2A4\uD31F)", 0, -1.2]] },
+  penis: { f: ["\uC190\uC774 \uAC10\uAE30\uAE30\uB9CC \uD574\uB3C4 \uC228\uC774 \uAC70\uCE60\uC5B4\uC9C4\uB2E4", "\uCC9C\uCC9C\uD788 \uC4F8\uC5B4 \uC62C\uB9AC\uBA74 \uD5C8\uB9AC\uAC00 \uC800\uC808\uB85C \uC6C0\uC9C1\uC778\uB2E4", "\uBFCC\uB9AC \uCABD\uC744 \uC950\uBA74 \uCC38\uB358 \uC18C\uB9AC\uAC00 \uC0CC\uB2E4"], s: [["\uBFCC\uB9AC \uCABD", 0, 3], ["\uC544\uB7AB\uBA74 \uAC00\uC6B4\uB370", 0, 0]] },
+  glans: { f: ["\uD600\uB05D\uB9CC \uC2A4\uCCD0\uB3C4 \uBAB8\uC774 \uD284\uB2E4", "\uB05D\uC744 \uBB38\uC9C0\uB974\uBA74 \uAE08\uBC29 \uBB34\uB108\uC9C4\uB2E4"], s: [["\uADC0\uB450 \uC544\uB798 \uC798\uB85D\uD55C \uACF3(\uC18C\uB300)", 0, 1.2], ["\uB05D", 0, -1]] },
+  testicles: { f: ["\uC0B4\uC9DD \uAC10\uC2F8 \uC950\uBA74 \uC228\uC744 \uC0BC\uD0A8\uB2E4", "\uBD80\uB4DC\uB7FD\uAC8C \uAD74\uB9AC\uBA74 \uB2E4\uB9AC\uC5D0 \uD798\uC774 \uB4E4\uC5B4\uAC04\uB2E4"], s: [["\uC544\uB798\uCABD", 0, 1.6], ["\uBFCC\uB9AC\uC640 \uC0AC\uC774(\uD68C\uC74C \uCABD)", -1, 3]] },
+  prostate: { f: ["\uC548\uCABD\uC744 \uB204\uB974\uBA74 \uC18C\uB9AC\uB97C \uCC38\uC9C0 \uBABB\uD55C\uB2E4", "\uAE4A\uAC8C \uB2FF\uC744\uC218\uB85D \uBAB8\uC774 \uB5A8\uB9B0\uB2E4"], s: [["\uC548\uCABD \uC55E\uBCBD", 0, 0]] },
   groin: { f: ["\uC870\uAE08\uB9CC \uB2FF\uC544\uB3C4 \uD5C8\uB9AC\uAC00 \uB5A0\uC624\uB978\uB2E4", "\uCC9C\uCC9C\uD788 \uBB38\uC9C0\uB974\uBA74 \uAE08\uBC29 \uC816\uC5B4 \uB4E0\uB2E4", "\uC9C1\uC811 \uB2FF\uAE30 \uC804\uBD80\uD130 \uBAB8\uC774 \uBA3C\uC800 \uBC18\uC751\uD55C\uB2E4"], s: [["\uC548\uCABD \uAC00\uC7A5 \uC608\uBBFC\uD55C \uACF3", 0, 2], ["\uC0AC\uD0C0\uAD6C\uB2C8 \uC811\uD78C \uACF3", -4, -1.6]] },
   thighs: { f: ["\uC548\uCABD\uC744 \uC4F8\uC5B4 \uC62C\uB9AC\uBA74 \uB2E4\uB9AC\uB97C \uC624\uBBC0\uB9B0\uB2E4", "\uC785\uB9DE\uCDA4\uC774 \uC62C\uB77C\uAC08\uC218\uB85D \uB5A8\uB9BC\uC774 \uCEE4\uC9C4\uB2E4"], s: [["\uD5C8\uBC85\uC9C0 \uC548\uCABD \uC704", 1.6, -6], ["\uBB34\uB98E \uC704 \uC548\uCABD", 1.2, 8]] },
   hands: { f: ["\uC190\uAC00\uB77D\uC744 \uBA38\uAE08\uC73C\uBA74 \uC2DC\uC120\uC774 \uD750\uB824\uC9C4\uB2E4", "\uC190\uBC14\uB2E5\uC744 \uB290\uB9AC\uAC8C \uC4F8\uBA74 \uC228\uC744 \uACE0\uB978\uB2E4"], s: [["\uC190\uBAA9 \uC548\uCABD", 1, -6], ["\uC190\uAC00\uB77D \uC0AC\uC774", 0, 4]] },
@@ -4991,9 +5105,9 @@ function cbsVisibilityExpression(input, state2) {
       cursor += literal[0].length;
       continue;
     }
-    const pair = input.slice(cursor, cursor + 2);
-    if (["<=", ">=", "==", "!=", "&&", "||"].includes(pair)) {
-      tokens2.push({ type: "operator", value: pair });
+    const pair2 = input.slice(cursor, cursor + 2);
+    if (["<=", ">=", "==", "!=", "&&", "||"].includes(pair2)) {
+      tokens2.push({ type: "operator", value: pair2 });
       cursor += 2;
       continue;
     }
@@ -7890,6 +8004,17 @@ function updateWikiDocument(scope, documentId, input, options = {}) {
   return next;
 }
 
+// src/engine/storycal.js
+var CAL_STAGE1 = [
+  "",
+  "bday|Name|M/D or ?|who they are to {{user}} in a few Korean words      a named recurring character's birthday when first shown or stated (Name may be {{user}}); resend only if the story corrects it",
+  "couple|Name|today, YYYY-MM-DD, ? or off      Name and {{user}} become an explicit romantic couple on screen (today), were already lovers (date or ?), or break up (off); crushes, flirting or sex alone do not count",
+  "plan|M/D|what (Korean)|off      a dated plan that matters is made (date, exam, trip) or cancelled (off)",
+  "day|M/D|name (Korean)|short note      a dated one-time special day in this story (festival, election)",
+  "country|KR, JP, US\u2026 or custom|country name (Korean)      the country of the scene, in the first response and when it changes",
+  "hol|M/D or M/D~M/D|name (Korean)|short note      only for a custom (fictional/historical) country: its holidays (about 20 days off a year), sent once when the country first appears"
+].join("\n");
+
 // src/engine/memextra.js
 var EXTRA_STAGE1 = [
   "",
@@ -7902,7 +8027,7 @@ var EXTRA_STAGE1 = [
 ].join("\n");
 var OUTFIT_PARTS = Object.freeze([["head", "\uBA38\uB9AC"], ["face", "\uC5BC\uAD74"], ["outer", "\uAC89\uC637"], ["top", "\uC0C1\uC758"], ["bra", "\uC18D\uC637(\uC704)"], ["bottom", "\uD558\uC758"], ["panties", "\uC18D\uC637(\uC544\uB798)"], ["legs", "\uB2E4\uB9AC"], ["feet", "\uC2E0\uBC1C"], ["acc", "\uC561\uC138\uC11C\uB9AC"]]);
 var OUTFIT_LABEL = Object.freeze(Object.fromEntries(OUTFIT_PARTS));
-var WEATHER_STAGE1 = "\nweather|\uB9D1\uC74C, \uAD6C\uB984, \uD750\uB9BC, \uBE44, \uD3ED\uC6B0, \uB208, \uC548\uAC1C, \uCC9C\uB465, \uBC14\uB78C or \uC2E4\uB0B4      the weather in newest's scene when it is shown or changes (also when {{user}}'s input changes it)" + CLIMATE_STAGE1;
+var WEATHER_STAGE1 = "\nweather|\uB9D1\uC74C, \uAD6C\uB984, \uD750\uB9BC, \uBE44, \uD3ED\uC6B0, \uB208, \uC548\uAC1C, \uCC9C\uB465, \uBC14\uB78C or \uC2E4\uB0B4      the weather in newest's scene when it is shown or changes (also when {{user}}'s input changes it)" + CLIMATE_STAGE1 + CAL_STAGE1;
 var WEATHER_KINDS = Object.freeze(["\uB9D1\uC74C", "\uAD6C\uB984", "\uD750\uB9BC", "\uBE44", "\uD3ED\uC6B0", "\uB208", "\uC548\uAC1C", "\uCC9C\uB465", "\uBC14\uB78C", "\uC2E4\uB0B4"]);
 var WORLD_LABEL = Object.freeze({ place: "\uC7A5\uC18C", item: "\uBB3C\uAC74", faction: "\uC138\uB825" });
 var STATUS_LV = Object.freeze(["", "\uAC00\uBCBC\uC6C0", "\uBCF4\uD1B5", "\uC2EC\uD568"]);
@@ -7947,6 +8072,15 @@ var CYCLE_STAGE1 = [
   "pregnant|Name      newest shows she is pregnant and knows it (positive test, a doctor says so, she tells someone)",
   "loss|Name      newest shows a miscarriage or the end of her pregnancy",
   "birth|Name      she gives birth in newest"
+].join("\n");
+var NSFW_LITE_STAGE1 = [
+  "",
+  "",
+  "Sexual profile tracking is on \u2014 ALSO write these lines only when newest clearly shows it (most replies have none):",
+  "sex|Name|m or f|exact quote      ONLY when newest shows Name's body sex actually changing (transformation, magic, curse, gender swap); never for clothing, roleplay or a guess",
+  "Name may be {{user}} too when newest or the user message clearly shows it (record only what {{user}} already did or said; never invent it).",
+  "gauge|Name|lust or fatigue|+n or -n (max 30)|exact quote      arousal never rises on its own \u2014 write lust only when newest moves this character's arousal; fatigue for real exertion or rest",
+  "sleep|Name"
 ].join("\n");
 var NSFW_STAGE1 = [
   "",
@@ -8109,16 +8243,16 @@ function rekey(map, set, fields, keyOf3, merge, to = USER, hit = isU) {
 }
 function relinkWith(folder, set, to, hit) {
   const side = (n) => hit(set, n) ? to : n;
-  const pair = (a, b) => key5(a) + ">" + key5(b);
+  const pair2 = (a, b) => key5(a) + ">" + key5(b);
   const newer = (a, b) => (b.at_ms ?? 0) >= (a.at_ms ?? 0) ? b : a;
-  folder.emo = rekey(folder.emo, set, ["from", "to"], (x) => pair(x.from, x.to), (keep, add) => ({ ...keep, tags: { ...add.tags, ...keep.tags }, log: [...add.log ?? [], ...keep.log ?? []] }), to, hit);
-  folder.talk = rekey(folder.talk, set, ["from", "to"], (x) => pair(x.from, x.to), newer, to, hit);
-  folder.ties = rekey(folder.ties, set, ["a", "b"], (x) => pair(x.a, x.b), newer, to, hit);
+  folder.emo = rekey(folder.emo, set, ["from", "to"], (x) => pair2(x.from, x.to), (keep, add) => ({ ...keep, tags: { ...add.tags, ...keep.tags }, log: [...add.log ?? [], ...keep.log ?? []] }), to, hit);
+  folder.talk = rekey(folder.talk, set, ["from", "to"], (x) => pair2(x.from, x.to), newer, to, hit);
+  folder.ties = rekey(folder.ties, set, ["a", "b"], (x) => pair2(x.a, x.b), newer, to, hit);
   if (folder.ties) {
     for (const [k, t] of Object.entries(folder.ties)) if (key5(t.a) === key5(t.b)) delete folder.ties[k];
   }
-  folder.rels = rekey(folder.rels, set, ["from", "to"], (x) => pair(x.from, x.to), (keep, add) => ({ ...keep, items: [...add.items ?? [], ...keep.items ?? []] }), to, hit);
-  folder.faces = rekey(folder.faces, set, ["who", "to"], (x) => pair(x.who, x.to), newer, to, hit);
+  folder.rels = rekey(folder.rels, set, ["from", "to"], (x) => pair2(x.from, x.to), (keep, add) => ({ ...keep, items: [...add.items ?? [], ...keep.items ?? []] }), to, hit);
+  folder.faces = rekey(folder.faces, set, ["who", "to"], (x) => pair2(x.who, x.to), newer, to, hit);
   folder.start = rekey(folder.start, set, ["a", "b"], (x) => [key5(x.a), key5(x.b)].sort().join("|"), (keep, add) => keep.level === "close" || add.level !== "close" ? keep : add, to, hit);
   folder.exp = rekey(folder.exp, set, ["a", "b"], (x) => [key5(x.a), key5(x.b)].sort().join("|"), newer, to, hit);
   for (const x of [...folder.bonds ?? [], ...folder.rifts ?? []]) {
@@ -8248,18 +8382,18 @@ function seedFromTies(folder, anchor = null, now = Date.now()) {
     const [dir, tags] = rule, mark = `${key6(t.kind)}`;
     for (const [from, to] of dir === "both" ? [[t.a, t.b], [t.b, t.a]] : [[t.a, t.b]]) {
       if (key6(from) === "{{user}}") continue;
-      const k = key6(from) + ">" + key6(to), pair = folder.emo[k] ??= { from, to, tags: {}, log: [] };
-      if ((pair.tieSeed ?? []).includes(mark)) continue;
+      const k = key6(from) + ">" + key6(to), pair2 = folder.emo[k] ??= { from, to, tags: {}, log: [] };
+      if ((pair2.tieSeed ?? []).includes(mark)) continue;
       const next = {}, prev = {};
-      for (const [tag, v] of Object.entries(tags)) if (pair.tags[tag] == null) {
-        pair.tags[tag] = v;
+      for (const [tag, v] of Object.entries(tags)) if (pair2.tags[tag] == null) {
+        pair2.tags[tag] = v;
         next[tag] = v;
         prev[tag] = null;
         n++;
       }
-      (pair.tieSeed ??= []).push(mark);
-      if (Object.keys(next).length) pair.log.push({ t: next, from: prev, why: `\uAD00\uACC4: ${t.kind}`.slice(0, 40), at: anchor?.at ?? t.at ?? null, at_ms: now });
-      if (!Object.keys(pair.tags).length && !pair.log.length) delete folder.emo[k];
+      (pair2.tieSeed ??= []).push(mark);
+      if (Object.keys(next).length) pair2.log.push({ t: next, from: prev, why: `\uAD00\uACC4: ${t.kind}`.slice(0, 40), at: anchor?.at ?? t.at ?? null, at_ms: now });
+      if (!Object.keys(pair2.tags).length && !pair2.log.length) delete folder.emo[k];
     }
   }
   return n;
@@ -8294,19 +8428,19 @@ function seedFromStart(folder, anchor = null, now = Date.now()) {
     if (!tags || x.orphan) continue;
     for (const [from, to] of [[x.a, x.b], [x.b, x.a]]) {
       if (!from || !to || key6(from) === "{{user}}") continue;
-      const k = key6(from) + ">" + key6(to), pair = folder.emo[k] ??= { from, to, tags: {}, log: [] };
+      const k = key6(from) + ">" + key6(to), pair2 = folder.emo[k] ??= { from, to, tags: {}, log: [] };
       const mark = `start:${x.level}`;
-      if ((pair.startSeed ?? []).includes(mark)) continue;
+      if ((pair2.startSeed ?? []).includes(mark)) continue;
       const next = {}, prev = {};
-      for (const [tag, v] of Object.entries(tags)) if ((pair.tags[tag] ?? 0) < v) {
-        prev[tag] = pair.tags[tag] ?? null;
-        pair.tags[tag] = v;
+      for (const [tag, v] of Object.entries(tags)) if ((pair2.tags[tag] ?? 0) < v) {
+        prev[tag] = pair2.tags[tag] ?? null;
+        pair2.tags[tag] = v;
         next[tag] = v;
         n++;
       }
-      (pair.startSeed ??= []).push(mark);
-      if (Object.keys(next).length) pair.log.push({ t: next, from: prev, why: `\uC774\uBBF8 \uC544\uB294 \uC0AC\uC774(${x.level === "close" ? "\uAC00\uAE4C\uC6C0" : "\uC544\uB294 \uC0AC\uC774"})`, at: anchor?.at ?? x.at ?? null, at_ms: now });
-      if (!Object.keys(pair.tags).length && !pair.log.length) delete folder.emo[k];
+      (pair2.startSeed ??= []).push(mark);
+      if (Object.keys(next).length) pair2.log.push({ t: next, from: prev, why: `\uC774\uBBF8 \uC544\uB294 \uC0AC\uC774(${x.level === "close" ? "\uAC00\uAE4C\uC6C0" : "\uC544\uB294 \uC0AC\uC774"})`, at: anchor?.at ?? x.at ?? null, at_ms: now });
+      if (!Object.keys(pair2.tags).length && !pair2.log.length) delete folder.emo[k];
     }
   }
   return n;
@@ -8483,12 +8617,12 @@ function normalizeKnownNames(result, folder) {
     return out;
   };
   const arr = (a) => Array.isArray(a) ? [...new Set(a.map(fix2))] : a;
-  const pair = (list, f1, f2) => Array.isArray(list) ? list.map((x) => ({ ...x, [f1]: fix2(x?.[f1]), [f2]: fix2(x?.[f2]) })) : list;
+  const pair2 = (list, f1, f2) => Array.isArray(list) ? list.map((x) => ({ ...x, [f1]: fix2(x?.[f1]), [f2]: fix2(x?.[f2]) })) : list;
   const r = { ...result };
   if (Array.isArray(r.people)) r.people = r.people.map((p) => ({ ...p, name: fix2(p?.name), ...p?.know ? { know: arr(p.know) } : {} }));
-  if (Array.isArray(r.rel)) r.rel = pair(r.rel, "from", "to");
-  if (Array.isArray(r.emo)) r.emo = pair(r.emo, "from", "to");
-  if (Array.isArray(r.ties)) r.ties = pair(r.ties, "a", "b").filter((t) => key8(t.a) !== key8(t.b));
+  if (Array.isArray(r.rel)) r.rel = pair2(r.rel, "from", "to");
+  if (Array.isArray(r.emo)) r.emo = pair2(r.emo, "from", "to");
+  if (Array.isArray(r.ties)) r.ties = pair2(r.ties, "a", "b").filter((t) => key8(t.a) !== key8(t.b));
   if (r.scene?.who) r.scene = { ...r.scene, who: arr(r.scene.who) };
   return { result: r, moved };
 }
@@ -8589,7 +8723,7 @@ function applyAnalysis(folder, result, anchor, { now = Date.now(), ignore = [], 
     out.open = o.added;
     out.closed = o.closed;
   }
-  out.human = applyHuman(folder, result?.human, anchor, { important, now });
+  out.human = applyHuman(folder, filterHuman(folder, result?.human, anchor?.at ?? 0), anchor, { important, now });
   out.startSeed = seedFromStart(folder, anchor, now);
   folder.runs = (folder.runs ?? 0) + 1;
   if (!(keepAhead && folder.cursor && Number(folder.cursor.at) > Number(anchor?.at))) folder.cursor = { ...anchor };
@@ -10139,7 +10273,6 @@ var LEGACY_KEY = "dusk.episodic-memory.v1";
 var DEFAULT_SETTINGS = Object.freeze({
   autoRecord: true,
   staged: true,
-  recorder: "dusk",
   serverAnalysis: true,
   serverModel: { presetId: "" },
   confirm: "next",
@@ -10566,7 +10699,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.29" : "dev";
+var ENGINE_VERSION = true ? "2.2.31" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
