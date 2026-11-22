@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.31 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.32 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -93,9 +93,9 @@ function validateTrust(e) {
   }
   const a = e?.attr;
   if (a && typeof a === "object") {
-    const c = ATTR_CATS[a.c] ? a.c : null, k = cut(a.k, 30), v = cut(a.v, 40);
-    if (c && nk(k) && nk(v)) {
-      out.attr = { c, k, v };
+    const c = ATTR_CATS[a.c] ? a.c : null, k2 = cut(a.k, 30), v = cut(a.v, 40);
+    if (c && nk(k2) && nk(v)) {
+      out.attr = { c, k: k2, v };
       const cond = cut(a.cond, 40);
       if (nk(cond)) out.attr.cond = cond;
       if (a.tm === "past") out.attr.tm = "past";
@@ -182,8 +182,8 @@ function chain(old, nw) {
 function resolveConflicts(records, nw, { now = Date.now() } = {}) {
   const out = { verdicts: [], alerts: [] };
   if (!nw.attr) return out;
-  const k = attrKey(nw), nv = nk(nw.attr.v);
-  const olds = (records ?? []).filter((r) => r.id !== nw.id && !r.orphan && isValid(r) && r.attr && attrKey(r) === k && nk(r.attr.v) !== nv);
+  const k2 = attrKey(nw), nv = nk(nw.attr.v);
+  const olds = (records ?? []).filter((r) => r.id !== nw.id && !r.orphan && isValid(r) && r.attr && attrKey(r) === k2 && nk(r.attr.v) !== nv);
   for (const old of olds) {
     const kind = classify(old, nw);
     if (kind === "conditional") {
@@ -309,7 +309,7 @@ function applyEmo(folder, emos, anchor, now = Date.now(), { smooth = false, ceil
   const src = srcOf(anchor);
   let changed = 0;
   for (const e of emos ?? []) {
-    const k = key(e.from) + ">" + key(e.to), pair2 = folder.emo[k] ??= { from: e.from, to: e.to, tags: {}, log: [] };
+    const k2 = key(e.from) + ">" + key(e.to), pair2 = folder.emo[k2] ??= { from: e.from, to: e.to, tags: {}, log: [] };
     const prev = {}, next = {};
     const lover = !!isLover2?.(e.from, e.to);
     for (let [tag, d] of Object.entries(e.t)) {
@@ -382,12 +382,12 @@ function convertAffinity(folder, docs, userName, now = Date.now()) {
     const m = (d?.metrics ?? []).find((x) => x?.slotId === "affinity.score");
     const lo = Number(m?.minimum), hi = Number(m?.maximum), v = Number(m?.value);
     if (!m || ![lo, hi, v].every(Number.isFinite) || hi <= lo) continue;
-    const k = key(d.title) + ">" + key(userName), pair2 = folder.emo[k] ??= { from: d.title, to: userName, tags: {}, log: [] };
-    if (pair2.tags.affection != null || folder.emoConv.some((c) => c.pair === k)) continue;
+    const k2 = key(d.title) + ">" + key(userName), pair2 = folder.emo[k2] ??= { from: d.title, to: userName, tags: {}, log: [] };
+    if (pair2.tags.affection != null || folder.emoConv.some((c) => c.pair === k2)) continue;
     const val = clampG((v - lo) / (hi - lo) * GAUGE_MAX);
     pair2.tags.affection = val;
     pair2.log.push({ t: { affection: val }, from: { affection: null }, why: "converted", at: null, at_ms: now });
-    folder.emoConv.push({ pair: k, from: "affinity.score", value: v, min: lo, max: hi, to: { affection: val }, at_ms: now });
+    folder.emoConv.push({ pair: k2, from: "affinity.score", value: v, min: lo, max: hi, to: { affection: val }, at_ms: now });
     n++;
   }
   return n;
@@ -431,10 +431,10 @@ function gradeResponse(entries) {
   scored.sort((a, b) => b.score - a.score);
   const perPerson = /* @__PURE__ */ new Map(), out = [];
   for (const e of scored) {
-    const k = norm(e.name);
-    const n = perPerson.get(k) ?? 0;
+    const k2 = norm(e.name);
+    const n = perPerson.get(k2) ?? 0;
     if (n >= MAX_PER_PERSON_PER_RESPONSE) continue;
-    perPerson.set(k, n + 1);
+    perPerson.set(k2, n + 1);
     out.push(e);
     if (out.length >= MAX_PER_RESPONSE) break;
   }
@@ -536,32 +536,32 @@ function applyExp(folder, exps, anchor, now = Date.now()) {
   const src = srcOf(anchor);
   let n = 0;
   for (const e of exps ?? []) {
-    const k = expKey(e.a, e.b), cur = folder.exp[k];
+    const k2 = expKey(e.a, e.b), cur = folder.exp[k2];
     const next = { a: e.a, b: e.b, ae: e.ae, be: e.be, as: e.as, bs: e.bs, gap: e.gap, ...e.viol ? { viol: e.viol } : {} };
     if (cur) {
       if (cur.lock) continue;
       const same = ["ae", "be", "as", "bs", "gap", "viol"].every((f) => (cur[f] ?? "") === (next[f] ?? ""));
       if (same) continue;
       const { prev, log, ...before } = cur;
-      folder.exp[k] = { ...next, prev: before, log: [...log ?? [], { gap: next.gap, at: anchor?.at ?? null, at_ms: now }].slice(-EXP_LOG), at_ms: now, ...src ? { src } : {} };
-    } else folder.exp[k] = { ...next, log: [{ gap: next.gap, at: anchor?.at ?? null, at_ms: now }], at_ms: now, ...src ? { src } : {} };
+      folder.exp[k2] = { ...next, prev: before, log: [...log ?? [], { gap: next.gap, at: anchor?.at ?? null, at_ms: now }].slice(-EXP_LOG), at_ms: now, ...src ? { src } : {} };
+    } else folder.exp[k2] = { ...next, log: [{ gap: next.gap, at: anchor?.at ?? null, at_ms: now }], at_ms: now, ...src ? { src } : {} };
     n++;
   }
   return n;
 }
 function tensionKeys(folder) {
   const out = /* @__PURE__ */ new Set();
-  for (const [k, p] of Object.entries(folder?.emo ?? {})) if (tensionOf(p.tags).length) out.add(k);
+  for (const [k2, p] of Object.entries(folder?.emo ?? {})) if (tensionOf(p.tags).length) out.add(k2);
   return out;
 }
 function noteTension(folder, before) {
   const now = tensionKeys(folder);
   folder.hints ??= [];
   let n = 0;
-  for (const k of now) {
-    if (before.has(k) || folder.hints.some((h) => h.pair === k)) continue;
-    const p = folder.emo[k];
-    folder.hints.push({ pair: k, person: p.from, to: p.to, tags: tensionOf(p.tags)[0], run: folder.runs ?? 0 });
+  for (const k2 of now) {
+    if (before.has(k2) || folder.hints.some((h) => h.pair === k2)) continue;
+    const p = folder.emo[k2];
+    folder.hints.push({ pair: k2, person: p.from, to: p.to, tags: tensionOf(p.tags)[0], run: folder.runs ?? 0 });
     n++;
   }
   folder.hints = folder.hints.slice(-HINT_MAX);
@@ -576,12 +576,12 @@ function clearHints(folder, person) {
 var hintsForPrompt = (folder) => (folder?.hints ?? []).filter((h) => (folder.runs ?? 0) - h.run <= HINT_RUNS).map((h) => ({ person: h.person, to: h.to, conflict: h.tags }));
 function revertExp(folder, aliveSrc) {
   let n = 0;
-  for (const [k, e] of Object.entries(folder.exp ?? {})) {
+  for (const [k2, e] of Object.entries(folder.exp ?? {})) {
     if (e.lock || !e.src || aliveSrc(e.src)) continue;
     if (e.prev) {
       const { log } = e;
-      folder.exp[k] = { ...e.prev, log: (log ?? []).slice(0, -1), at_ms: e.prev.at_ms };
-    } else delete folder.exp[k];
+      folder.exp[k2] = { ...e.prev, log: (log ?? []).slice(0, -1), at_ms: e.prev.at_ms };
+    } else delete folder.exp[k2];
     n++;
   }
   return n;
@@ -958,30 +958,30 @@ function canonName(name, known = [], extra = []) {
   let n = String(name ?? "").replace(/[「」『』"“”'‘’*_`]/g, "").replace(/\s*[(（].*?[)）]\s*/g, "").trim();
   if (/^(user|유저|플레이어|player|나)$/i.test(n)) return "{{user}}";
   if (!n) return "";
-  const k = nk3(n);
+  const k2 = nk3(n);
   const pool = [...known.flatMap((p) => [p.name, ...p.aliases ?? []]), ...extra].filter(Boolean);
-  const byName = known.filter((p) => nk3(p.name) === k), byNick = known.filter((p) => (p.aliases ?? []).some((a) => nk3(a) === k));
+  const byName = known.filter((p) => nk3(p.name) === k2), byNick = known.filter((p) => (p.aliases ?? []).some((a) => nk3(a) === k2));
   if (byName.length) return byName[0].name;
   if (byNick.length === 1) return byNick[0].name;
   if (byNick.length > 1) return n.slice(0, 60);
-  for (const c of extra) if (nk3(c) === k) return c;
+  for (const c of extra) if (nk3(c) === k2) return c;
   const toks = (v) => String(v ?? "").split(/\s+/).map(nk3).filter((t) => t.length >= 2);
   if (toks(n).length === 1) {
     const part = known.filter((p) => {
       const t = toks(p.name);
-      return t.length > 1 && t.includes(k);
+      return t.length > 1 && t.includes(k2);
     });
     if (part.length === 1) return part[0].name;
     if (part.length > 1) return n.slice(0, 60);
-    if (k.length >= 2 && !part.length) {
+    if (k2.length >= 2 && !part.length) {
       const tail = known.filter((p) => {
         const pn = nk3(p.name);
-        return toks(p.name).length === 1 && pn.length >= k.length + 2 && pn.endsWith(k);
+        return toks(p.name).length === 1 && pn.length >= k2.length + 2 && pn.endsWith(k2);
       });
       if (tail.length === 1) return tail[0].name;
       const head = known.filter((p) => {
         const pn = nk3(p.name);
-        return toks(p.name).length === 1 && pn.length >= 2 && k.length >= pn.length + 2 && k.endsWith(pn);
+        return toks(p.name).length === 1 && pn.length >= 2 && k2.length >= pn.length + 2 && k2.endsWith(pn);
       });
       if (head.length === 1) return head[0].name;
     }
@@ -994,26 +994,26 @@ function canonName(name, known = [], extra = []) {
       if (g) return g.name;
     }
   }
-  const stripped = k.replace(/(선생님|교수님|선배님|센빠이|센파이|센세|사마|님|씨|군|양|선배|쌤|선생|공|쨩|짱|상|쿤|언니|오빠|누나|형|-?san|-?chan|-?kun|-?sama|-?senpai)$/i, "");
-  if (stripped !== k && stripped.length >= 2) {
+  const stripped = k2.replace(/(선생님|교수님|선배님|센빠이|센파이|센세|사마|님|씨|군|양|선배|쌤|선생|공|쨩|짱|상|쿤|언니|오빠|누나|형|-?san|-?chan|-?kun|-?sama|-?senpai)$/i, "");
+  if (stripped !== k2 && stripped.length >= 2) {
     const base = String(n).replace(/\s*(선생님|교수님|선배님|센빠이|센파이|센세|사마|님|씨|군|양|선배|쌤|선생|공|쨩|짱|상|쿤|언니|오빠|누나|형|-?san|-?chan|-?kun|-?sama|-?senpai)$/i, "").trim();
     if (base && base !== n) {
       const c2 = canonName(base, known, extra);
       if (known.some((p) => nk3(p.name) === nk3(c2))) return c2;
     }
   }
-  if (stripped !== k && stripped.length >= 2) {
+  if (stripped !== k2 && stripped.length >= 2) {
     for (const c of pool) if (nk3(c) === stripped) return known.find((p) => nk3(p.name) === stripped || (p.aliases ?? []).some((a) => nk3(a) === stripped))?.name ?? c;
   }
-  if (k.length >= 3) {
+  if (k2.length >= 3) {
     const near = known.filter((p) => [p.name, ...p.aliases ?? []].some((c) => {
       const ck = nk3(c);
-      return ck.length >= 3 && Math.abs(ck.length - k.length) <= 1 && dist1(ck, k);
+      return ck.length >= 3 && Math.abs(ck.length - k2.length) <= 1 && dist1(ck, k2);
     }));
     if (near.length === 1) return near[0].name;
     if (!near.length) for (const c of extra) {
       const ck = nk3(c);
-      if (ck.length >= 3 && Math.abs(ck.length - k.length) <= 1 && dist1(ck, k)) return c;
+      if (ck.length >= 3 && Math.abs(ck.length - k2.length) <= 1 && dist1(ck, k2)) return c;
     }
   }
   return n.slice(0, 60);
@@ -1047,16 +1047,16 @@ function inText(name, source) {
   return toks.length > 1 && toks.some((t) => src.includes(t));
 }
 function quoteOk(q, source) {
-  const k = nk3(q);
-  return k.length >= 3 && nk3(source).includes(k);
+  const k2 = nk3(q);
+  return k2.length >= 3 && nk3(source).includes(k2);
 }
 function focusText(text2, name, max = 2400) {
   const t = String(text2 ?? "");
   if (t.length <= max) return t;
-  const paras = t.split(/\n{1,}/), k = nk3(name);
+  const paras = t.split(/\n{1,}/), k2 = nk3(name);
   const keep = /* @__PURE__ */ new Set();
   paras.forEach((p, i) => {
-    if (k && nk3(p).includes(k)) {
+    if (k2 && nk3(p).includes(k2)) {
       keep.add(i);
       if (i > 0) keep.add(i - 1);
     }
@@ -1100,8 +1100,8 @@ function fromStage1(lines, { known = [], source = "", openIds = null } = {}) {
       const from = targetName(f[0], known, source), to = targetName(f[1], known, source), d = (f[2] ?? "").slice(0, 40);
       if (from && to && nk3(from) !== nk3(to) && d) raw.rel.push({ from, to, d, dir: /^[+\-0]$/.test((f[3] ?? "").trim()) ? f[3].trim() : "0" });
     } else if (tag === "open" && raw.open.add.length < 3) {
-      const text2 = (f[0] ?? "").slice(0, 80), k = String(f[1] ?? "").trim().toLowerCase();
-      const kind = /^(promise|plan|약속|계획)/.test(k) ? "promise" : /^(foreshadow|secret|복선|비밀)/.test(k) ? "foreshadow" : /^(question|의문|질문)/.test(k) ? "question" : /모른다|모름|궁금|\?|누가|왜|정체|비밀/.test(text2) ? "question" : "promise";
+      const text2 = (f[0] ?? "").slice(0, 80), k2 = String(f[1] ?? "").trim().toLowerCase();
+      const kind = /^(promise|plan|약속|계획)/.test(k2) ? "promise" : /^(foreshadow|secret|복선|비밀)/.test(k2) ? "foreshadow" : /^(question|의문|질문)/.test(k2) ? "question" : /모른다|모름|궁금|\?|누가|왜|정체|비밀/.test(text2) ? "question" : "promise";
       if (text2) raw.open.add.push({ text: text2, kind, who: [] });
     } else if (tag === "close" && raw.open.close.length < 6) {
       const id = (f[0] ?? "").trim().replace(/^#/, ""), how = closeHow(f[1]), why = (f[2] ?? "").trim().slice(0, 60);
@@ -1149,8 +1149,8 @@ function fromStage2(lines, name, { known = [], source = "", light = false } = {}
       if (kd) entry.kd = kd;
       if (/^[HML]$/.test(fc)) entry.fc = fc;
     } else if (tag === "attr" && attrs.length < 3) {
-      const c = YN3(f[0], [...ATTR_CATS2], ""), k = (f[1] ?? "").slice(0, 40), v = (f[2] ?? "").slice(0, 80);
-      if (c && k && v) attrs.push({ c, k, v, ...f[3] ? { cond: f[3].slice(0, 60) } : {} });
+      const c = YN3(f[0], [...ATTR_CATS2], ""), k2 = (f[1] ?? "").slice(0, 40), v = (f[2] ?? "").slice(0, 80);
+      if (c && k2 && v) attrs.push({ c, k: k2, v, ...f[3] ? { cond: f[3].slice(0, 60) } : {} });
     } else if (tag === "keys") {
       const ks = (f[0] ?? "").split(/[,，、/]/).map((x) => x.trim()).filter(Boolean).slice(0, 3);
       if (ks.length) entry.keys = ks;
@@ -1161,11 +1161,11 @@ function fromStage2(lines, name, { known = [], source = "", light = false } = {}
       if (q && source && !quoteOk(q, source)) continue;
       const t = {};
       for (const src of [ATT[att], DEED[deed]]) for (const [tag2, d] of Object.entries(src)) t[tag2] = (t[tag2] ?? 0) + d;
-      for (const k of Object.keys(t)) {
-        t[k] = Math.max(-3, Math.min(3, t[k]));
-        if (!t[k]) delete t[k];
+      for (const k2 of Object.keys(t)) {
+        t[k2] = Math.max(-3, Math.min(3, t[k2]));
+        if (!t[k2]) delete t[k2];
       }
-      if (!q) for (const k of Object.keys(t)) t[k] = Math.max(-1, Math.min(1, t[k]));
+      if (!q) for (const k2 of Object.keys(t)) t[k2] = Math.max(-1, Math.min(1, t[k2]));
       if (Object.keys(t).length || deed === "refuse" || deed === "confess") emo.push({ from: name, to, t, why: (q || `${att} ${deed}`).slice(0, 40), ...["confess", "refuse", "flirt", "touch", "jealous"].includes(deed) ? { deed } : {} });
     } else if (tag === "call" && talk.length < 2) {
       const to = targetName(f[0], known, source), call = (f[1] ?? "").slice(0, 20), tone = YN3(f[2], ["formal", "casual", "mixed"], { \uC874\uB313\uB9D0: "formal", \uC874\uB300: "formal", \uBC18\uB9D0: "casual" }[f[2]] ?? "");
@@ -1204,7 +1204,7 @@ function normalizeJsonKeys(obj2) {
           break;
         }
       }
-      for (const k of ["p", "s", "r"]) if (o[k] != null) o[k] = coerceInt(o[k], 0, 3, 0);
+      for (const k2 of ["p", "s", "r"]) if (o[k2] != null) o[k2] = coerceInt(o[k2], 0, 3, 0);
       return o;
     });
   }
@@ -1252,8 +1252,8 @@ function sameKoreanPerson(a, b) {
 function canonNameKo(name, known = [], extra = []) {
   const r = canonName(name, known, extra);
   if (!r || r === "{{user}}") return r;
-  const k = nk4(r);
-  if (known.some((p) => nk4(p.name) === k || (p.aliases ?? []).some((a) => nk4(a) === k))) return r;
+  const k2 = nk4(r);
+  if (known.some((p) => nk4(p.name) === k2 || (p.aliases ?? []).some((a) => nk4(a) === k2))) return r;
   const hit = known.filter((p) => [p.name, ...p.aliases ?? []].some((n) => sameKoreanPerson(r, n)));
   return hit.length === 1 ? hit[0].name : r;
 }
@@ -1314,7 +1314,7 @@ var TIE_KINDS = Object.freeze([
   { id: "regular", g: "etc", ko: "\uB2E8\uACE8", floor: 1, up: ["\uAC00\uAC8C \uC8FC\uC778", "\uB2E8\uACE8"], re: /regular|customer|shopkeeper|단골|손님|가게/ },
   { id: "acquaint", g: "etc", ko: "\uC9C0\uC778", floor: 1, re: /acquaint|지인|아는 사이/ }
 ]);
-var TIE_BY_ID = Object.freeze(Object.fromEntries(TIE_KINDS.map((k) => [k.id, k])));
+var TIE_BY_ID = Object.freeze(Object.fromEntries(TIE_KINDS.map((k2) => [k2.id, k2])));
 var nk0 = (s) => String(s ?? "").normalize("NFC").toLowerCase().replace(/\s+/g, "");
 function tiesBetween(ties, a, b, K = nk0) {
   const ka = K(a), kb = K(b);
@@ -1357,16 +1357,16 @@ function canonOf(folder) {
 function keyOf(folder) {
   const c = canonOf(folder);
   return (n) => {
-    const k = key3(n);
-    if (!c || !k) return k;
-    let v = c.m.get(k);
+    const k2 = key3(n);
+    if (!c || !k2) return k2;
+    let v = c.m.get(k2);
     if (v === void 0) {
-      v = k;
+      v = k2;
       for (const [t, ck] of c.titles) if (sameKoreanPerson(t, String(n))) {
         v = ck;
         break;
       }
-      c.m.set(k, v);
+      c.m.set(k2, v);
     }
     return v;
   };
@@ -1520,10 +1520,10 @@ function applyHuman(folder, h, anchor, { important = false, now = Date.now() } =
   let n = 0;
   folder.talk ??= {};
   for (const t of h.talk ?? []) {
-    const k = key3(t.from) + ">" + key3(t.to), cur = folder.talk[k];
+    const k2 = key3(t.from) + ">" + key3(t.to), cur = folder.talk[k2];
     if (cur?.lock || cur && cur.call === t.call && cur.tone === t.tone) continue;
     const { back, ...curFlat } = cur ?? {};
-    folder.talk[k] = { from: t.from, to: t.to, call: t.call, tone: t.tone, ...cur ? { prev: { call: cur.call, tone: cur.tone }, back: curFlat } : {}, at, at_ms: now, ...src ? { src } : {} };
+    folder.talk[k2] = { from: t.from, to: t.to, call: t.call, tone: t.tone, ...cur ? { prev: { call: cur.call, tone: cur.tone }, back: curFlat } : {}, at, at_ms: now, ...src ? { src } : {} };
     n++;
   }
   for (const x of h.start ?? []) {
@@ -1563,9 +1563,9 @@ function applyHuman(folder, h, anchor, { important = false, now = Date.now() } =
   }
   for (const x of h.face ?? []) {
     folder.faces ??= {};
-    const k = key3(x.who) + ">" + key3(x.to), cur = folder.faces[k];
+    const k2 = key3(x.who) + ">" + key3(x.to), cur = folder.faces[k2];
     if (cur?.lock || cur && nk5(cur.alone) === nk5(x.alone) && nk5(cur.public) === nk5(x.public)) continue;
-    folder.faces[k] = { who: x.who, to: x.to, alone: x.alone, public: x.public, ...cur ? { back: flat(cur) } : {}, at, at_ms: now, ...src ? { src } : {} };
+    folder.faces[k2] = { who: x.who, to: x.to, alone: x.alone, public: x.public, ...cur ? { back: flat(cur) } : {}, at, at_ms: now, ...src ? { src } : {} };
     n++;
   }
   if (h.belief?.length || h.cleared?.length) {
@@ -1590,16 +1590,16 @@ function applyHuman(folder, h, anchor, { important = false, now = Date.now() } =
 }
 function revertHuman(folder, alive2) {
   let n = 0;
-  for (const [k, t] of Object.entries(folder?.talk ?? {})) {
+  for (const [k2, t] of Object.entries(folder?.talk ?? {})) {
     if (t.lock || !t.src || alive2(t.src)) continue;
-    if (t.back) folder.talk[k] = t.back;
-    else delete folder.talk[k];
+    if (t.back) folder.talk[k2] = t.back;
+    else delete folder.talk[k2];
     n++;
   }
-  for (const [k, x] of Object.entries(folder?.faces ?? {})) {
+  for (const [k2, x] of Object.entries(folder?.faces ?? {})) {
     if (x.lock || !x.src || alive2(x.src)) continue;
-    if (x.back) folder.faces[k] = x.back;
-    else delete folder.faces[k];
+    if (x.back) folder.faces[k2] = x.back;
+    else delete folder.faces[k2];
     n++;
   }
   if (folder?.rifts) {
@@ -1660,7 +1660,7 @@ function cleanForMemory(text2) {
   if (!/[<&]/.test(s)) return s;
   s = s.replace(REASONING, "").replace(DROP, "");
   s = s.replace(TAG, (m) => BLOCK.test(m) ? "\n" : "");
-  s = s.replace(/&(nbsp|amp|lt|gt|quot|apos|#39);/g, (_, k) => ENT[k]).replace(/&#(\d{1,6});/g, (m, n) => {
+  s = s.replace(/&(nbsp|amp|lt|gt|quot|apos|#39);/g, (_, k2) => ENT[k2]).replace(/&#(\d{1,6});/g, (m, n) => {
     const c = Number(n);
     return c > 0 && c < 1114112 ? String.fromCodePoint(c) : m;
   });
@@ -1691,7 +1691,7 @@ function mergeParts(results) {
     if (Array.isArray(a) || Array.isArray(b)) return [...Array.isArray(a) ? a : [], ...Array.isArray(b) ? b : []];
     if (a && typeof a === "object" && b && typeof b === "object") {
       const o = { ...a };
-      for (const [k, v] of Object.entries(b)) o[k] = k in o ? merge(o[k], v) : v;
+      for (const [k2, v] of Object.entries(b)) o[k2] = k2 in o ? merge(o[k2], v) : v;
       return o;
     }
     return a === void 0 || a === null || a === "" ? b : a;
@@ -1761,8 +1761,8 @@ function appendToMessages(messages, block) {
   if (!block || !Array.isArray(messages)) return messages;
   const out = messages.map((m) => ({ ...m }));
   let i = -1;
-  for (let k = out.length - 1; k >= 0; k--) if (out[k]?.role === "system" && typeof out[k].content === "string") {
-    i = k;
+  for (let k2 = out.length - 1; k2 >= 0; k2--) if (out[k2]?.role === "system" && typeof out[k2].content === "string") {
+    i = k2;
     break;
   }
   if (i < 0) {
@@ -1797,11 +1797,11 @@ var COLLECTIVE_RULE = "A character is one individual with a name or a clear iden
 // src/engine/jsonparse.js
 function closeTail(s) {
   const st = [];
-  let inStr = false, esc = false;
+  let inStr = false, esc2 = false;
   for (const ch of s) {
     if (inStr) {
-      if (esc) esc = false;
-      else if (ch === "\\") esc = true;
+      if (esc2) esc2 = false;
+      else if (ch === "\\") esc2 = true;
       else if (ch === '"') inStr = false;
       continue;
     }
@@ -1821,9 +1821,9 @@ function salvage(s) {
       return JSON.parse(closeTail(s));
     } catch {
     }
-    const k = s.lastIndexOf(",");
-    if (k < 0) break;
-    s = s.slice(0, k);
+    const k2 = s.lastIndexOf(",");
+    if (k2 < 0) break;
+    s = s.slice(0, k2);
   }
   return null;
 }
@@ -1875,13 +1875,13 @@ function applyTies(folder, ties, anchor, now = Date.now()) {
   let n = 0;
   for (const t of ties ?? []) {
     folder.ties ??= {};
-    const k = tkey(t.a, t.b), old = folder.ties[k], src = srcOf(anchor);
+    const k2 = tkey(t.a, t.b), old = folder.ties[k2], src = srcOf(anchor);
     if (old && !old.orphan && old.kind === t.kind) {
       old.at = anchor?.at ?? old.at;
       continue;
     }
     const prev = old && !old.orphan ? old : old?.prev ?? null;
-    folder.ties[k] = { a: t.a, b: t.b, kind: t.kind, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {}, ...prev ? { prev: { kind: prev.kind, at: prev.at ?? null, at_ms: prev.at_ms ?? null, ...prev.src ? { src: prev.src } : {} } } : {} };
+    folder.ties[k2] = { a: t.a, b: t.b, kind: t.kind, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {}, ...prev ? { prev: { kind: prev.kind, at: prev.at ?? null, at_ms: prev.at_ms ?? null, ...prev.src ? { src: prev.src } : {} } } : {} };
     n++;
   }
   return n;
@@ -1892,7 +1892,7 @@ function applyRel(folder, rels, anchor, now = Date.now()) {
   let n = 0;
   const src = srcOf(anchor);
   for (const r of rels ?? []) {
-    const k = key4(r.from) + ">" + key4(r.to), pair2 = folder.rels[k] ??= { from: r.from, to: r.to, items: [] };
+    const k2 = key4(r.from) + ">" + key4(r.to), pair2 = folder.rels[k2] ??= { from: r.from, to: r.to, items: [] };
     const last = pair2.items.filter((i) => !i.orphan).at(-1);
     if (last && similarity(last.d, r.d) >= 0.8) continue;
     pair2.items.push({ d: r.d, dir: r.dir, at: anchor?.at ?? null, at_ms: now, ...src ? { src } : {} });
@@ -2068,11 +2068,11 @@ ${suffix}` }, { ...usr, content: JSON.stringify(extra ? { ...payload, ...extra }
 }
 var isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
 function mergeInto(a, b) {
-  for (const [k, v] of Object.entries(b ?? {})) {
+  for (const [k2, v] of Object.entries(b ?? {})) {
     if (v == null) continue;
-    if (Array.isArray(v)) a[k] = [...Array.isArray(a[k]) ? a[k] : [], ...v];
-    else if (isObj(v)) a[k] = mergeInto(isObj(a[k]) ? a[k] : {}, v);
-    else if (a[k] === void 0 || a[k] === "") a[k] = v;
+    if (Array.isArray(v)) a[k2] = [...Array.isArray(a[k2]) ? a[k2] : [], ...v];
+    else if (isObj(v)) a[k2] = mergeInto(isObj(a[k2]) ? a[k2] : {}, v);
+    else if (a[k2] === void 0 || a[k2] === "") a[k2] = v;
   }
   return a;
 }
@@ -2080,14 +2080,14 @@ var normName = (n) => String(n ?? "").toLowerCase().replace(/\s+/g, "");
 var MAX_DETAIL = 6;
 async function askJson(call, msgs) {
   let raw = await call(msgs), parsed, err;
-  for (let k = 0; k < 3; k++) {
+  for (let k2 = 0; k2 < 3; k2++) {
     try {
       parsed = unwrap(parseJson(raw));
       err = null;
       break;
     } catch (e) {
       err = e;
-      if (k === 2) break;
+      if (k2 === 2) break;
       raw = await call([...msgs, { role: "assistant", content: String(raw ?? "").slice(0, 2e3) }, { role: "user", content: "Return only the JSON object." }]);
     }
   }
@@ -2107,7 +2107,7 @@ async function analyzeStagedJson(call, input, { onWarn = () => {
       const mine = (Array.isArray(det?.people) ? det.people : []).find((e) => normName(e?.name) === normName(t.name)) ?? null;
       const slot = merged.people.find((e) => normName(e?.name) === normName(t.name));
       if (mine && slot) {
-        for (const [k, v] of Object.entries(mine)) if (!["name", "act", "p", "s", "r"].includes(k) && v != null) slot[k] = v;
+        for (const [k2, v] of Object.entries(mine)) if (!["name", "act", "p", "s", "r"].includes(k2) && v != null) slot[k2] = v;
       }
       const { people: _p, scene: _s, rel: _r, open: _o, ...rest } = det ?? {};
       mergeInto(merged, rest);
@@ -2128,13 +2128,13 @@ async function askLines(call0, msgs, parse3, { minimal = null } = {}) {
     }
   };
   let raw = await call(msgs), last = raw;
-  for (let k = 0; k < 3; k++) {
+  for (let k2 = 0; k2 < 3; k2++) {
     const got = parse3(raw);
     if (got) return got;
-    if (k === 2) break;
+    if (k2 === 2) break;
     last = raw;
     const kind = failureKind(raw);
-    const next = (k === 1 || kind === "truncated") && minimal ? [{ role: "system", content: minimal + (kind === "truncated" ? "\n" + RETRY_NOTE.truncated : "") }, msgs[1]] : [...msgs, ...kind === "empty" ? [] : [{ role: "assistant", content: String(raw ?? "").slice(0, 1500) }], { role: "user", content: RETRY_NOTE[kind] }];
+    const next = (k2 === 1 || kind === "truncated") && minimal ? [{ role: "system", content: minimal + (kind === "truncated" ? "\n" + RETRY_NOTE.truncated : "") }, msgs[1]] : [...msgs, ...kind === "empty" ? [] : [{ role: "assistant", content: String(raw ?? "").slice(0, 1500) }], { role: "user", content: RETRY_NOTE[kind] }];
     raw = await call(next);
   }
   throw Object.assign(new Error(`\uBD84\uC11D \uC751\uB2F5 \uD615\uC2DD \uC624\uB958 \u2014 \uC751\uB2F5 \uC55E\uBD80\uBD84: ${headOf(raw || last)}`), { raw: headOf(raw || last) });
@@ -2162,7 +2162,7 @@ async function analyzeLines(call, input, { onWarn = () => {
   } catch {
     p1 = {};
   }
-  for (const k of ["emoState", "lovers", "talkState", "rifts", "beliefs", "selfHint", "gauges", "suggestGauge"]) delete p1[k];
+  for (const k2 of ["emoState", "lovers", "talkState", "rifts", "beliefs", "selfHint", "gauges", "suggestGauge"]) delete p1[k2];
   const openIds = new Set((input.openItems ?? []).map((x) => String(x.id)));
   const sys1 = withCustom(input.custom, LINES_STAGE1);
   const m1 = [{ role: "system", content: sys1 }, { role: "user", content: JSON.stringify(p1) }];
@@ -2180,7 +2180,7 @@ async function analyzeLines(call, input, { onWarn = () => {
   const put = (name, got) => {
     const slot = merged.people.find((e) => e.name === name);
     if (slot) Object.assign(slot, got.entry);
-    for (const k of ["emo", "talk", "rift", "bond", "belief", "start"]) merged[k].push(...got[k] ?? []);
+    for (const k2 of ["emo", "talk", "rift", "bond", "belief", "start"]) merged[k2].push(...got[k2] ?? []);
   };
   let rest = targets;
   if (group && newest.length >= SHORT && targets.length > 1) {
@@ -2225,7 +2225,7 @@ async function analyzeLines(call, input, { onWarn = () => {
         const lines = parseLines(raw);
         if (lines.length) return fromStage2(lines, t.name, { known, source, light: lite });
         const j = jsonFrom(raw), me = (j?.people ?? []).find((e) => String(e?.name ?? "").replace(/\s+/g, "") === t.name.replace(/\s+/g, ""));
-        return j ? { entry: me ? Object.fromEntries(Object.entries(me).filter(([k]) => !["name", "act", "p", "s", "r"].includes(k))) : {}, emo: j.emo ?? [], talk: j.talk ?? [], rift: j.rift ?? [], bond: j.bond ?? [], belief: j.belief ?? [], start: j.start ?? [] } : null;
+        return j ? { entry: me ? Object.fromEntries(Object.entries(me).filter(([k2]) => !["name", "act", "p", "s", "r"].includes(k2))) : {}, emo: j.emo ?? [], talk: j.talk ?? [], rift: j.rift ?? [], bond: j.bond ?? [], belief: j.belief ?? [], start: j.start ?? [] } : null;
       });
       let got;
       try {
@@ -2249,14 +2249,14 @@ async function analyze(call, input, { staged = false, onWarn, light = false, for
   if (staged) return analyzeStaged(call, input, { onWarn, light, format, group });
   const msgs = buildMessages(input);
   let raw = await call(msgs), parsed, err;
-  for (let k = 0; k < 3; k++) {
+  for (let k2 = 0; k2 < 3; k2++) {
     try {
       parsed = unwrap(parseJson(raw));
       err = null;
       break;
     } catch (e) {
       err = e;
-      if (k === 2) break;
+      if (k2 === 2) break;
       raw = await call([...msgs, { role: "assistant", content: String(raw ?? "").slice(0, 2e3) }, { role: "user", content: "Return only the JSON object." }]);
     }
   }
@@ -3629,6 +3629,83 @@ var APPRAISAL_LABELS = Object.freeze({ [APPRAISAL_FIRST_SLOT]: "\uCCAB\uC778\uC0
 // src/engine/pot/information-continuity-shared.js
 var INFORMATION_CONTINUITY_CONTROL = "Preserve each established text field and list when this material adds no observation. Never replace known content with \uBBF8\uD655\uC778, \uBBF8\uC0C1, unknown, an empty string or an empty list. Omit that change or return no_change instead. Review the six personality fields independently for this preservation rule. A concrete evidenced correction, changed relationship, explicit forgetting or numeric decrease remains allowed. Retain still-valid details in every complete replacement; do not erase details merely because they are not repeated in this turn. JavaScript checks whole-value placeholders, not the truth or meaning of your concrete updates.";
 
+// src/data/dbcache.js
+var dbRead = (api, keys) => typeof api.getDatabaseCached === "function" ? api.getDatabaseCached(keys, { shared: true }) : api.getDatabase(keys);
+
+// src/data/plugins.js
+var REG = "da_interop:reg:";
+var ACTION = "da_interop:action:";
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+var clone = (v) => JSON.parse(JSON.stringify(v ?? null));
+async function readJson(api, key9, fallback) {
+  try {
+    const raw = await api.pluginStorage.getItem(key9);
+    if (raw === null || raw === void 0 || raw === "") return fallback;
+    return typeof raw === "string" ? JSON.parse(raw) : raw;
+  } catch {
+    return fallback;
+  }
+}
+var writeJson = (api, key9, v) => api.pluginStorage.setItem(key9, JSON.stringify(v));
+async function readInterop(api, id) {
+  const e = await readJson(api, REG + id, null);
+  return e && e.spec === 1 && e.id === id ? e : null;
+}
+var hasAction = (entry, key9) => Array.isArray(entry?.actions) && entry.actions.some((a) => a?.key === key9);
+async function sendAction(api, id, key9, args = null) {
+  const prev = await readJson(api, ACTION + id, null);
+  const reg = await readJson(api, REG + id, null);
+  const rev = Math.max(prev?.rev ?? 0, reg?.actionRev ?? 0) + 1;
+  await writeJson(api, ACTION + id, { rev, key: key9, args: clone(args), updatedAt: Date.now() });
+  return rev;
+}
+async function waitAction(api, id, rev, timeoutMs = 4e3, stepMs = 250) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    const e = await readJson(api, REG + id, null);
+    if ((e?.actionRev ?? 0) >= rev) return e.actionRev === rev ? { ok: !e.actionError, result: e.actionResult ?? null, error: e.actionError ?? null } : { ok: false, result: null, error: "superseded" };
+    await sleep(stepMs);
+  }
+  return { ok: false, result: null, error: "timeout" };
+}
+async function runAction(api, id, key9, args = null, timeoutMs) {
+  const rev = await sendAction(api, id, key9, args);
+  return waitAction(api, id, rev, timeoutMs);
+}
+
+// src/data/risu64link.js
+var R64_ID = "risu64";
+var R64_ACTION = "obfuscate";
+var WAIT_MS = 1e4;
+var CHECK_MS = 5e3;
+var BACKOFF_MS = 6e4;
+var chain2 = Promise.resolve();
+var ready = { at: 0, ok: false };
+var offUntil = 0;
+async function isReady(api) {
+  if (Date.now() < offUntil) return false;
+  if (Date.now() - ready.at < CHECK_MS) return ready.ok;
+  const e = await readInterop(api, R64_ID).catch(() => null);
+  ready = { at: Date.now(), ok: hasAction(e, R64_ACTION) };
+  return ready.ok;
+}
+var validMsgs = (v) => Array.isArray(v) && v.length > 0 && v.every((m) => m && typeof m.role === "string" && (typeof m.content === "string" || Array.isArray(m.content)));
+async function r64Messages(api, messages) {
+  if (!Array.isArray(messages) || !messages.length || !api?.pluginStorage?.getItem) return messages;
+  if (!await isReady(api)) return messages;
+  const job = chain2.then(async () => {
+    const r = await runAction(api, R64_ID, R64_ACTION, { messages, source: "dusk" }, WAIT_MS).catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
+    if (r?.error === "timeout") offUntil = Date.now() + BACKOFF_MS;
+    const out = Array.isArray(r?.result) ? r.result : r?.result?.messages;
+    if (r?.ok && validMsgs(out)) return out;
+    if (r && !r.ok) console.warn("[Dusk] Risu64 \uB09C\uB3C5\uD654 \uC2E4\uD328, \uC6D0\uBB38\uC73C\uB85C \uBCF4\uB0C4:", r.error);
+    return messages;
+  });
+  chain2 = job.catch(() => {
+  });
+  return job;
+}
+
 // src/engine/pot/model-options.js
 var DEFAULT_MAX_TOKENS = 8192;
 var RISUAI_SUBMODEL_PROVIDER = "risuai";
@@ -4624,11 +4701,21 @@ async function callRisuSubmodel(api, preset, prompt, { signal, label, scheduler 
     return content.trim();
   }, { signal, timeoutSeconds, scheduler, label });
 }
+async function r64Prompt(api, prompt) {
+  try {
+    const out = await r64Messages(api, [{ role: "user", content: prompt }]);
+    const c = out?.[0]?.content;
+    return typeof c === "string" && c ? c : prompt;
+  } catch {
+    return prompt;
+  }
+}
 async function callWriterModel(api, keyStore, preset, prompt, { signal, stageLabel = "Writer", scheduler = globalThis, onUsage } = {}) {
   const label = String(stageLabel || "Model").replace(/[^A-Za-z가-힣 ]/g, "").slice(0, 30) || "Model";
   if (preset?.provider === "risuai" && typeof prompt === "string" && prompt) return await callRisuSubmodel(api, preset, prompt, { signal, label, scheduler });
   if (!preset || typeof prompt !== "string" || !prompt) throw new LlmClientError(`${label} \uBAA8\uB378 \uC694\uCCAD \uC124\uC815\uC774 \uBD80\uC871\uD569\uB2C8\uB2E4.`);
   if (!preset.baseUrl || !preset.model) throw new LlmClientError(`${label} \uBAA8\uB378\uC758 Endpoint\uC640 Model\uC744 \uC124\uC815\uD574\uC8FC\uC138\uC694.`);
+  prompt = await r64Prompt(api, prompt);
   const timeoutSeconds = llmTimeoutSeconds(preset);
   const { body: parsedExtraBody, headers: extraHeaders } = splitExtra(preset.extraBodyJson || "");
   const nativeThinkingOff = deepSeekThinkingDisabled(preset), extraBody = nativeThinkingOff || preset.provider === "vertex-ai" ? parsedExtraBody : withoutDeepSeekThinkingOffFields(parsedExtraBody);
@@ -5030,9 +5117,9 @@ function cbsVisibilityCondition(block, state2) {
     const left = values.pop();
     let answer;
     if (["vis", "visnot", "tis", "tisnot"].includes(operator)) {
-      const global = operator.startsWith("t"), read = cbsVisibilityVariable(state2, global, global ? "toggle_" + left : left);
-      if (read === null) return { value: null, mode };
-      answer = operator.endsWith("not") ? read !== value : read === value;
+      const global = operator.startsWith("t"), read2 = cbsVisibilityVariable(state2, global, global ? "toggle_" + left : left);
+      if (read2 === null) return { value: null, mode };
+      answer = operator.endsWith("not") ? read2 !== value : read2 === value;
     } else switch (operator) {
       case "and":
         answer = cbsVisibilityTruthy(left) && cbsVisibilityTruthy(value);
@@ -5549,6 +5636,148 @@ function combineCbsSourceDiagnostics(...items) {
     result.reasonCodes = [.../* @__PURE__ */ new Set([...result.reasonCodes, ...item.reasonCodes || []])];
   }
   return result;
+}
+
+// src/engine/useralias.js
+var CONS = { b: 7, c: 15, d: 3, f: 17, g: 0, h: 18, j: 12, k: 15, l: 5, m: 6, n: 2, p: 17, q: 15, r: 5, s: 9, t: 16, v: 7, z: 12 };
+var CODA = { n: 4, m: 16, l: 8, ng: 21 };
+var isV = (c) => "aeiou".includes(c);
+var syl = (l, v, t = 0) => String.fromCharCode(44032 + (l * 21 + v) * 28 + t);
+function read(word, { magic, ae, th }) {
+  let w = word;
+  let longAt = -1;
+  const mm = /([aeiou])([^aeiouwy])e$/.exec(w);
+  if (mm) {
+    if (magic) longAt = mm.index;
+    w = w.slice(0, -1);
+  }
+  const softNext = (i) => "eiy".includes(word[i + 1] ?? "");
+  const toks = [];
+  for (let i = 0; i < w.length; ) {
+    const c = w[i], two = w.slice(i, i + 2);
+    if (isV(c) || c === "y" && i > 0 && !isV(w[i + 1] ?? "")) {
+      const g = { ee: [20], ea: [20], ie: [20], oo: [13], ai: [5, 20], ay: [5, 20], ei: [5, 20], ey: [5, 20], ou: [0, 13], ow: [0, 13], au: [8], aw: [8], oa: [8], eo: [5, 8] }[two];
+      if (g && two !== "eo") {
+        toks.push({ v: g });
+        i += 2;
+        continue;
+      }
+      const long = i === longAt;
+      const v = c === "a" ? long ? [5, 20] : [ae ? 1 : 0] : c === "e" ? long ? [20] : [5] : c === "i" || c === "y" ? long ? [0, 20] : [20] : c === "o" ? [8] : long ? [17] : [13];
+      toks.push({ v });
+      i++;
+      continue;
+    }
+    if (two === "ch") {
+      toks.push({ c: 14, s: "ch" });
+      i += 2;
+      continue;
+    }
+    if (two === "sh") {
+      toks.push({ c: 9, s: "sh" });
+      i += 2;
+      continue;
+    }
+    if (two === "th") {
+      toks.push({ c: th ? 3 : 9, s: "th" });
+      i += 2;
+      continue;
+    }
+    if (two === "ph") {
+      toks.push({ c: 17 });
+      i += 2;
+      continue;
+    }
+    if (two === "ck") {
+      toks.push({ c: 15 });
+      i += 2;
+      continue;
+    }
+    if (two === "ng" && !isV(w[i + 2] ?? "")) {
+      toks.push({ c: 11, s: "ng" });
+      i += 2;
+      continue;
+    }
+    if (c === "x") {
+      toks.push({ c: 15 }, { c: 9 });
+      i++;
+      continue;
+    }
+    if (c === "w" || c === "y") {
+      toks.push({ glide: c });
+      i++;
+      continue;
+    }
+    let j = CONS[c];
+    if (j == null) {
+      i++;
+      continue;
+    }
+    if (c === "c" && softNext(i)) j = 9;
+    if (c === "g" && softNext(i)) j = 12;
+    if (c === "s" && mm && i === w.length - 1 && magic) j = 12;
+    toks.push({ c: j, s: j === 12 && c === "s" ? "z" : c });
+    i++;
+  }
+  let out = "", onset = null, glide = null;
+  const last = () => out.slice(-1);
+  const setCoda = (t) => {
+    const ch = out.charCodeAt(out.length - 1) - 44032;
+    if (ch < 0 || ch % 28) return false;
+    out = out.slice(0, -1) + String.fromCharCode(44032 + ch + t);
+    return true;
+  };
+  const flush = (tk) => {
+    const v = tk.s === "ch" || tk.s === "sh" || tk.s === "j" ? 20 : 18;
+    out += syl(tk.c, v);
+  };
+  for (let i = 0; i < toks.length; i++) {
+    const tk = toks[i], nx = toks[i + 1];
+    if (tk.glide) {
+      glide = tk.glide;
+      continue;
+    }
+    if (tk.v) {
+      let v0 = tk.v[0];
+      if (glide === "w") v0 = { 0: 9, 5: 15, 20: 16, 8: 14, 4: 14 }[v0] ?? 13;
+      if (glide === "y") v0 = { 0: 2, 5: 7, 8: 12, 13: 17, 4: 6 }[v0] ?? 20;
+      out += syl(onset ?? 11, v0);
+      for (const v of tk.v.slice(1)) out += syl(11, v);
+      onset = null;
+      glide = null;
+      continue;
+    }
+    if (nx?.v || nx?.glide) {
+      if (onset != null) flush({ c: onset });
+      if (tk.s === "l" && out && toks[i - 1]?.v) setCoda(8);
+      onset = tk.c;
+      continue;
+    }
+    if (onset != null) {
+      flush({ c: onset });
+      onset = null;
+    }
+    if (CODA[tk.s] != null && out && setCoda(CODA[tk.s])) continue;
+    flush(tk);
+  }
+  if (onset != null) flush({ c: onset });
+  return out;
+}
+function hangulReadings(name) {
+  const s = String(name ?? "").trim().toLowerCase();
+  if (!/^[a-z][a-z' -]{1,30}$/.test(s)) return [];
+  const words = s.replace(/'/g, "").split(/[\s-]+/).filter(Boolean);
+  const out = /* @__PURE__ */ new Set();
+  for (const magic of [true, false]) for (const ae of [false, true]) for (const th of [true, false]) {
+    const r = words.map((w) => read(w, { magic, ae, th })).join(" ");
+    if (r.trim()) out.add(r);
+    if (words.length > 1) out.add(r.replace(/\s+/g, ""));
+  }
+  return [...out].slice(0, 6);
+}
+function userAliasesFor(names2 = [], folder = null) {
+  const base = (names2 ?? []).filter((n) => typeof n === "string" && n.trim());
+  return [.../* @__PURE__ */ new Set([...base, ...base.flatMap(hangulReadings), ...Array.isArray(folder?.userAliases) ? folder.userAliases : []])];
 }
 
 // src/data/pot/chat-source.js
@@ -6168,7 +6397,7 @@ function peopleImportParseJson(raw) {
   if (first >= 0) {
     const v = salvageJson(text2.slice(first));
     if (peopleImportRecord(v)) {
-      for (const k of ["people", "candidates", "profiles"]) if (Array.isArray(v[k]) && v[k].length > 1) v[k].pop();
+      for (const k2 of ["people", "candidates", "profiles"]) if (Array.isArray(v[k2]) && v[k2].length > 1) v[k2].pop();
       return v;
     }
   }
@@ -7446,7 +7675,7 @@ function validateWriterReceipts(raw) {
   if (raw === void 0) return void 0;
   const object = (value) => value && typeof value === "object" && !Array.isArray(value), safeKey = (value) => typeof value === "string" && value.length <= 800 && !["__proto__", "constructor", "prototype"].includes(value);
   if (!object(raw) || Object.keys(raw).length > 24) throw new Error("Writer \uBCF5\uAD6C \uC6D0\uC7A5\uC774 \uC190\uC0C1\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
-  for (const [key9, r] of Object.entries(raw)) if (!safeKey(key9) || !object(r) || Object.keys(r).some((k) => !["requestRef", "rpHash", "scopeKey", "at", "keys", "refs", "created", "metricPrior", "resolvedInputs"].includes(k)) || r.requestRef !== key9 || typeof r.rpHash !== "string" || !/^[a-f0-9]{64}$/.test(r.rpHash) || typeof r.scopeKey !== "string" || r.scopeKey.length > 1200 || typeof r.at !== "string" || r.at.length > 80 || !Array.isArray(r.keys) || r.keys.length > 4096 || r.keys.some((k) => typeof k !== "string" || !/^[a-f0-9]{64}$/.test(k)) || !object(r.refs) || Object.keys(r.refs).length > 512 || Object.entries(r.refs).some(([k, v]) => !safeKey(k) || typeof v !== "string" || v.length > 160) || !Array.isArray(r.created) || r.created.length > 384 || r.created.some((k) => typeof k !== "string" || k.length > 160) || r.resolvedInputs !== void 0 && (!Array.isArray(r.resolvedInputs) || r.resolvedInputs.length > 24 || r.resolvedInputs.some((key10) => typeof key10 !== "string" || !/^[a-f0-9]{64}$/.test(key10))) || !object(r.metricPrior) || Object.keys(r.metricPrior).length > 768 || Object.entries(r.metricPrior).some(([k, v]) => !safeKey(k) || !Number.isFinite(v) || Math.abs(v) > 1e6)) throw new Error("Writer \uBCF5\uAD6C \uC6D0\uC7A5\uC774 \uC190\uC0C1\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+  for (const [key9, r] of Object.entries(raw)) if (!safeKey(key9) || !object(r) || Object.keys(r).some((k2) => !["requestRef", "rpHash", "scopeKey", "at", "keys", "refs", "created", "metricPrior", "resolvedInputs"].includes(k2)) || r.requestRef !== key9 || typeof r.rpHash !== "string" || !/^[a-f0-9]{64}$/.test(r.rpHash) || typeof r.scopeKey !== "string" || r.scopeKey.length > 1200 || typeof r.at !== "string" || r.at.length > 80 || !Array.isArray(r.keys) || r.keys.length > 4096 || r.keys.some((k2) => typeof k2 !== "string" || !/^[a-f0-9]{64}$/.test(k2)) || !object(r.refs) || Object.keys(r.refs).length > 512 || Object.entries(r.refs).some(([k2, v]) => !safeKey(k2) || typeof v !== "string" || v.length > 160) || !Array.isArray(r.created) || r.created.length > 384 || r.created.some((k2) => typeof k2 !== "string" || k2.length > 160) || r.resolvedInputs !== void 0 && (!Array.isArray(r.resolvedInputs) || r.resolvedInputs.length > 24 || r.resolvedInputs.some((key10) => typeof key10 !== "string" || !/^[a-f0-9]{64}$/.test(key10))) || !object(r.metricPrior) || Object.keys(r.metricPrior).length > 768 || Object.entries(r.metricPrior).some(([k2, v]) => !safeKey(k2) || !Number.isFinite(v) || Math.abs(v) > 1e6)) throw new Error("Writer \uBCF5\uAD6C \uC6D0\uC7A5\uC774 \uC190\uC0C1\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
   return receiptClone(raw);
 }
 
@@ -7947,8 +8176,8 @@ function normalizeWikiScope(raw) {
       }
       if (item.summary !== void 0) {
         const s = item.summary;
-        wikiAssert(wikiRecord(s) && Object.keys(s).every((k) => ["created", "updated", "removed", "upsertedEntries", "removedEntries", "metricOpsApplied", "metricOpsIgnored", "peopleInitialized", "peopleObserved", "peopleReviewReady", "affected", "saved", "repairAttempted", "batchCount"].includes(k)), "\uC790\uB3D9 \uD65C\uB3D9 \uC694\uC57D\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
-        for (const k of ["created", "updated", "removed", "upsertedEntries", "removedEntries", "metricOpsIgnored", "peopleInitialized", "peopleObserved", "peopleReviewReady"]) wikiAssert(Number.isInteger(s[k] ?? 0) && (s[k] ?? 0) >= 0 && (s[k] ?? 0) <= (k === "metricOpsIgnored" ? 8192 : 128), "\uC790\uB3D9 \uD65C\uB3D9 \uC218\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+        wikiAssert(wikiRecord(s) && Object.keys(s).every((k2) => ["created", "updated", "removed", "upsertedEntries", "removedEntries", "metricOpsApplied", "metricOpsIgnored", "peopleInitialized", "peopleObserved", "peopleReviewReady", "affected", "saved", "repairAttempted", "batchCount"].includes(k2)), "\uC790\uB3D9 \uD65C\uB3D9 \uC694\uC57D\uC774 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
+        for (const k2 of ["created", "updated", "removed", "upsertedEntries", "removedEntries", "metricOpsIgnored", "peopleInitialized", "peopleObserved", "peopleReviewReady"]) wikiAssert(Number.isInteger(s[k2] ?? 0) && (s[k2] ?? 0) >= 0 && (s[k2] ?? 0) <= (k2 === "metricOpsIgnored" ? 8192 : 128), "\uC790\uB3D9 \uD65C\uB3D9 \uC218\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
         if (s.metricOpsApplied !== void 0) wikiAssert(Number.isInteger(s.metricOpsApplied) && s.metricOpsApplied >= 0 && s.metricOpsApplied <= 128, "\uC790\uB3D9 metric \uC801\uC6A9 \uC218\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
         if (s.batchCount !== void 0) wikiAssert(Number.isInteger(s.batchCount) && s.batchCount >= 1 && s.batchCount <= 12, "\uC790\uB3D9 Writer batch \uC218\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
         wikiAssert(typeof s.saved === "boolean" && (s.repairAttempted === void 0 || typeof s.repairAttempted === "boolean") && Array.isArray(s.affected) && s.affected.length <= 32 && s.affected.every((a) => wikiRecord(a) && typeof a.type === "string" && typeof a.title === "string" && a.title.length <= 120), "\uC790\uB3D9 \uD65C\uB3D9 \uBB38\uC11C\uAC00 \uC798\uBABB\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
@@ -8169,12 +8398,12 @@ async function findForkParent(candidates, readFolder, messages, { min = 5 } = {}
 }
 async function inheritFromParent(store, chaId, chatId, messages, folder = null) {
   if (folder?.adoptedFrom || typeof store.botFolders !== "function" || typeof store.adoptFolder !== "function") return false;
-  const k = `${chaId}|${chatId}`;
-  if (checked.get(k) === messages.length) return false;
-  checked.set(k, messages.length);
+  const k2 = `${chaId}|${chatId}`;
+  if (checked.get(k2) === messages.length) return false;
+  checked.set(k2, messages.length);
   if (checked.size > 300) checked.delete(checked.keys().next().value);
   const idx = await store.getIndex();
-  if (idx.settings?.inject?.forkInherit === false || idx.noInherit?.[k]) return false;
+  if (idx.settings?.inject?.forkInherit === false || idx.noInherit?.[k2]) return false;
   const list = (await store.botFolders(chaId)).filter((f) => String(f.chatId) !== String(chatId)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0)).slice(0, 12);
   if (!list.length) return false;
   const best = await findForkParent(list, (cid) => store.getFolder(String(chaId), String(cid)), messages);
@@ -8236,8 +8465,8 @@ function rekey(map, set, fields, keyOf3, merge, to = USER, hit = isU) {
       nv[f] = to;
       moved = true;
     }
-    const k = keyOf3(nv);
-    out[k] = out[k] ? moved ? merge(out[k], nv) : merge(nv, out[k]) : nv;
+    const k2 = keyOf3(nv);
+    out[k2] = out[k2] ? moved ? merge(out[k2], nv) : merge(nv, out[k2]) : nv;
   }
   return out;
 }
@@ -8249,7 +8478,7 @@ function relinkWith(folder, set, to, hit) {
   folder.talk = rekey(folder.talk, set, ["from", "to"], (x) => pair2(x.from, x.to), newer, to, hit);
   folder.ties = rekey(folder.ties, set, ["a", "b"], (x) => pair2(x.a, x.b), newer, to, hit);
   if (folder.ties) {
-    for (const [k, t] of Object.entries(folder.ties)) if (key5(t.a) === key5(t.b)) delete folder.ties[k];
+    for (const [k2, t] of Object.entries(folder.ties)) if (key5(t.a) === key5(t.b)) delete folder.ties[k2];
   }
   folder.rels = rekey(folder.rels, set, ["from", "to"], (x) => pair2(x.from, x.to), (keep, add) => ({ ...keep, items: [...add.items ?? [], ...keep.items ?? []] }), to, hit);
   folder.faces = rekey(folder.faces, set, ["who", "to"], (x) => pair2(x.who, x.to), newer, to, hit);
@@ -8266,7 +8495,7 @@ function relinkWith(folder, set, to, hit) {
   for (const s of folder.scenes ?? []) if (Array.isArray(s.who)) s.who = [...new Set(s.who.map((w) => side(w)))];
 }
 function relinkNames(folder, names2 = [], to) {
-  const tk = key5(to), set = new Set(names2.map(key5).filter((k) => k && k !== tk));
+  const tk = key5(to), set = new Set(names2.map(key5).filter((k2) => k2 && k2 !== tk));
   if (!set.size || !folder) return;
   relinkWith(folder, set, to, (st, n) => typeof n === "string" && st.has(key5(n)));
 }
@@ -8310,7 +8539,7 @@ function mergeWhen(when, iso) {
   const w = String(when ?? "").trim();
   if (!iso) return w;
   if (!w) return iso;
-  return /\d/.test(w) ? w : `${iso} ${w}`;
+  return /\d{3,4}\s*[-./년]\s*\d{1,2}|\d{1,2}\s*월\s*\d{1,2}\s*일?|\d{1,2}\s*[/.]\s*\d{1,2}(?!\d|:)/.test(w) ? w : `${iso} ${w}`;
 }
 
 // src/engine/memorydelete.js
@@ -8323,20 +8552,20 @@ var nk6 = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, "");
 var LOVER_RE = /(연인|애인|여자\s*친구|남자\s*친구|여친|남친|아내|남편|부인|배우자|약혼|부부|신부|신랑|와이프|허즈번드|girl\s*friend|boy\s*friend|lover|wife|husband|spouse|fianc|romantic\s*partner|sweetheart)/i;
 var NOT_RE = /(^|\s)(전|옛|예전|이전)\s*|전(남친|여친|남편|아내|애인|연인)|前|\bex[-\s]?|former|짝사랑|썸|crush|되고\s*싶|원하는|wants?\b|wannabe|가짜|위장|계약|fake|pretend|친구\s*같은|소꿉|사별|이혼|divorc|widow|헤어진|broke\s*up/i;
 function isLoverKind(kind) {
-  const k = String(kind ?? "").trim();
-  return !!k && LOVER_RE.test(k) && !NOT_RE.test(k);
+  const k2 = String(kind ?? "").trim();
+  return !!k2 && LOVER_RE.test(k2) && !NOT_RE.test(k2);
 }
 var pairKey2 = (a, b) => [nk6(a), nk6(b)].sort().join("~");
 function loverPairs(folder) {
   const out = /* @__PURE__ */ new Map();
   for (const t of liveTies(folder)) {
     if (!isLoverKind(t.kind)) continue;
-    const k = pairKey2(t.a, t.b);
-    if (!out.has(k) || (t.at ?? -1) > (out.get(k).at ?? -1)) out.set(k, { a: t.a, b: t.b, kind: t.kind, at: t.at ?? null, by: "tie" });
+    const k2 = pairKey2(t.a, t.b);
+    if (!out.has(k2) || (t.at ?? -1) > (out.get(k2).at ?? -1)) out.set(k2, { a: t.a, b: t.b, kind: t.kind, at: t.at ?? null, by: "tie" });
   }
-  for (const [k, v] of Object.entries(folder?.lovers ?? {})) {
-    if (v === false) out.delete(k);
-    else if (v && typeof v === "object" && v.on) out.set(k, { a: v.a, b: v.b, kind: v.kind || "\uC560\uC778", at: null, by: "user" });
+  for (const [k2, v] of Object.entries(folder?.lovers ?? {})) {
+    if (v === false) out.delete(k2);
+    else if (v && typeof v === "object" && v.on) out.set(k2, { a: v.a, b: v.b, kind: v.kind || "\uC560\uC778", at: null, by: "user" });
   }
   return [...out.values()];
 }
@@ -8353,6 +8582,19 @@ function strayRisk(folder, name) {
     if (why) return { partner: lp.other, attraction: Number.isFinite(att) ? att : null, why };
   }
   return null;
+}
+
+// src/engine/actowner.js
+var k = (s) => String(s ?? "").normalize("NFKC").toLowerCase().replace(/\s+/g, "");
+var esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function othersAct(e, names2 = [], selfAliases = []) {
+  const act = String(e?.act ?? "").trim();
+  if (!act) return false;
+  const self = [e.name, ...selfAliases].filter((n) => typeof n === "string" && n.trim().length >= 2 && !/^\{\{user\}\}$/i.test(n));
+  if (self.some((n) => k(act).includes(k(n)))) return false;
+  if (/(^|[^가-힣])(나|내가|나는|나를|나에게|저|제가)([^가-힣]|$)/.test(act) && /^\{\{user\}\}$/i.test(e.name ?? "")) return false;
+  const others = names2.filter((n) => typeof n === "string" && n.trim().length >= 2 && k(n) !== k(e.name) && !self.some((s) => k(s) === k(n)) && !/^\{\{user\}\}$/i.test(n));
+  return others.some((n) => new RegExp(`^${esc(n.trim())}\\s*(\uC774|\uAC00|\uC740|\uB294|\uAED8\uC11C|\uB3C4)(\\s|$)`).test(act));
 }
 
 // src/engine/emoseed.js
@@ -8382,7 +8624,7 @@ function seedFromTies(folder, anchor = null, now = Date.now()) {
     const [dir, tags] = rule, mark = `${key6(t.kind)}`;
     for (const [from, to] of dir === "both" ? [[t.a, t.b], [t.b, t.a]] : [[t.a, t.b]]) {
       if (key6(from) === "{{user}}") continue;
-      const k = key6(from) + ">" + key6(to), pair2 = folder.emo[k] ??= { from, to, tags: {}, log: [] };
+      const k2 = key6(from) + ">" + key6(to), pair2 = folder.emo[k2] ??= { from, to, tags: {}, log: [] };
       if ((pair2.tieSeed ?? []).includes(mark)) continue;
       const next = {}, prev = {};
       for (const [tag, v] of Object.entries(tags)) if (pair2.tags[tag] == null) {
@@ -8393,7 +8635,7 @@ function seedFromTies(folder, anchor = null, now = Date.now()) {
       }
       (pair2.tieSeed ??= []).push(mark);
       if (Object.keys(next).length) pair2.log.push({ t: next, from: prev, why: `\uAD00\uACC4: ${t.kind}`.slice(0, 40), at: anchor?.at ?? t.at ?? null, at_ms: now });
-      if (!Object.keys(pair2.tags).length && !pair2.log.length) delete folder.emo[k];
+      if (!Object.keys(pair2.tags).length && !pair2.log.length) delete folder.emo[k2];
     }
   }
   return n;
@@ -8428,7 +8670,7 @@ function seedFromStart(folder, anchor = null, now = Date.now()) {
     if (!tags || x.orphan) continue;
     for (const [from, to] of [[x.a, x.b], [x.b, x.a]]) {
       if (!from || !to || key6(from) === "{{user}}") continue;
-      const k = key6(from) + ">" + key6(to), pair2 = folder.emo[k] ??= { from, to, tags: {}, log: [] };
+      const k2 = key6(from) + ">" + key6(to), pair2 = folder.emo[k2] ??= { from, to, tags: {}, log: [] };
       const mark = `start:${x.level}`;
       if ((pair2.startSeed ?? []).includes(mark)) continue;
       const next = {}, prev = {};
@@ -8440,7 +8682,7 @@ function seedFromStart(folder, anchor = null, now = Date.now()) {
       }
       (pair2.startSeed ??= []).push(mark);
       if (Object.keys(next).length) pair2.log.push({ t: next, from: prev, why: `\uC774\uBBF8 \uC544\uB294 \uC0AC\uC774(${x.level === "close" ? "\uAC00\uAE4C\uC6C0" : "\uC544\uB294 \uC0AC\uC774"})`, at: anchor?.at ?? x.at ?? null, at_ms: now });
-      if (!Object.keys(pair2.tags).length && !pair2.log.length) delete folder.emo[k];
+      if (!Object.keys(pair2.tags).length && !pair2.log.length) delete folder.emo[k2];
     }
   }
   return n;
@@ -8463,7 +8705,7 @@ function addEvent(folder, ev) {
 }
 var hasEvent = (folder, kind, a, b) => (folder?.romance?.events ?? []).some((e) => e.kind === kind && pairKey2(e.a, e.b) === pairKey2(a, b));
 function bump(folder, from, to, tag, d, why, at, now, gauge) {
-  const k = key7(from) + ">" + key7(to), p = (folder.emo ??= {})[k] ??= { from, to, tags: {}, log: [] };
+  const k2 = key7(from) + ">" + key7(to), p = (folder.emo ??= {})[k2] ??= { from, to, tags: {}, log: [] };
   const step = scaleDelta(d, gauge, { tag });
   if (!step) return 0;
   const before = p.tags[tag], v = Math.max(0, Math.min(10, (before ?? 0) + step));
@@ -8485,12 +8727,12 @@ function unrequited(folder) {
 function triangles(folder) {
   const by = /* @__PURE__ */ new Map();
   for (const p of Object.values(folder?.emo ?? {})) if ((p?.tags?.attraction ?? 0) >= 5) {
-    const k = key7(p.to);
-    (by.get(k) ?? by.set(k, { to: p.to, who: [] }).get(k)).who.push(p.from);
+    const k2 = key7(p.to);
+    (by.get(k2) ?? by.set(k2, { to: p.to, who: [] }).get(k2)).who.push(p.from);
   }
   for (const lp of loverPairs(folder)) for (const [x, y] of [[lp.a, lp.b], [lp.b, lp.a]]) {
-    const k = key7(y);
-    const g = by.get(k) ?? by.set(k, { to: y, who: [] }).get(k);
+    const k2 = key7(y);
+    const g = by.get(k2) ?? by.set(k2, { to: y, who: [] }).get(k2);
     if (!g.who.some((w) => key7(w) === key7(x))) g.who.push(x);
   }
   const out = [];
@@ -8505,9 +8747,9 @@ function applyRomance(folder, emos, loversBefore, anchor = null, now = Date.now(
   const loversNow = loverPairs(folder), nowKeys = new Set(loversNow.map((p) => pairKey2(p.a, p.b)));
   if (sc && Array.isArray(sc.who)) for (let i = 0; i < sc.who.length; i++) for (let j = i + 1; j < sc.who.length; j++) {
     const a = sc.who[i], b = sc.who[j];
-    const k = pairKey2(a, b), first = (r.firsts ??= {}).met ??= {};
-    if (key7(a) !== key7(b) && !first[k]) {
-      first[k] = { a, b, at, ...when ? { when } : {} };
+    const k2 = pairKey2(a, b), first = (r.firsts ??= {}).met ??= {};
+    if (key7(a) !== key7(b) && !first[k2]) {
+      first[k2] = { a, b, at, ...when ? { when } : {} };
       out.events++;
     }
   }
@@ -8531,8 +8773,8 @@ function applyRomance(folder, emos, loversBefore, anchor = null, now = Date.now(
     out.events++;
     if (r.awkward) delete r.awkward[pairKey2(p.a, p.b)];
   }
-  for (const k of loversBefore) if (!nowKeys.has(k)) {
-    const [a, b] = (r.lastLovers ?? {})[k] ?? k.split("~");
+  for (const k2 of loversBefore) if (!nowKeys.has(k2)) {
+    const [a, b] = (r.lastLovers ?? {})[k2] ?? k2.split("~");
     ev("breakup", a, b);
     out.events++;
   }
@@ -8574,9 +8816,9 @@ function applyRomance(folder, emos, loversBefore, anchor = null, now = Date.now(
   {
     const first = (r.firsts ??= {}).fight ??= {};
     for (const rf of folder.rifts ?? []) {
-      const k = pairKey2(rf.a, rf.b);
-      if (!rf.orphan && !first[k]) {
-        first[k] = { a: rf.a, b: rf.b, at: rf.at ?? at, ...when ? { when } : {} };
+      const k2 = pairKey2(rf.a, rf.b);
+      if (!rf.orphan && !first[k2]) {
+        first[k2] = { a: rf.a, b: rf.b, at: rf.at ?? at, ...when ? { when } : {} };
         out.events++;
       }
     }
@@ -8629,14 +8871,14 @@ function normalizeKnownNames(result, folder) {
 var key8 = (n) => String(n ?? "").toLowerCase().replace(/\s+/g, "");
 var rid3 = (p) => p + "_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 function findPersonKey(folder, name) {
-  const k = key8(name);
-  if (folder.people[k]) return k;
-  for (const [pk, p] of Object.entries(folder.people)) if ((p.aliases ?? []).some((a) => key8(a) === k)) return pk;
+  const k2 = key8(name);
+  if (folder.people[k2]) return k2;
+  for (const [pk, p] of Object.entries(folder.people)) if ((p.aliases ?? []).some((a) => key8(a) === k2)) return pk;
   return null;
 }
 var latestScene = (folder) => [...folder.scenes ?? []].reverse().find((s) => !s.orphan) ?? null;
 function applyAnalysis(folder, result, anchor, { now = Date.now(), ignore = [], covered = null, storyDate = "", cool = true, userNames = [], smooth = false, gauge = null, userGuard = false, keepAhead = false } = {}) {
-  result = normalizeUserNames(result, userNames);
+  result = normalizeUserNames(result, userAliasesFor(userNames, folder));
   const named = normalizeKnownNames(result, folder);
   result = named.result;
   for (const [from, to] of named.moved) {
@@ -8662,7 +8904,9 @@ function applyAnalysis(folder, result, anchor, { now = Date.now(), ignore = [], 
   const sit = latestScene(folder)?.id ?? null;
   const graded = gradeResponse((result?.people ?? []).filter((p) => !ign.has(key8(p.name)) && !isCollectiveName(p.name)));
   const important = isImportant(graded, out.scene === "new");
+  const allNames = [.../* @__PURE__ */ new Set([...graded.map((p) => p.name), ...Object.values(folder?.people ?? {}).flatMap((p) => [p.name, ...p.aliases ?? []])])], uAliases = userAliasesFor(userNames, folder);
   for (const e of graded) {
+    if (othersAct(e, allNames, /^\{\{user\}\}$/i.test(e.name ?? "") ? uAliases : folder.people?.[findPersonKey(folder, e.name)]?.aliases ?? [])) continue;
     let pk = findPersonKey(folder, e.name);
     if (!pk) {
       pk = key8(e.name);
@@ -8934,83 +9178,6 @@ function applyUserPrompts(messages, c) {
   return out;
 }
 
-// src/data/dbcache.js
-var dbRead = (api, keys) => typeof api.getDatabaseCached === "function" ? api.getDatabaseCached(keys, { shared: true }) : api.getDatabase(keys);
-
-// src/data/plugins.js
-var REG = "da_interop:reg:";
-var ACTION = "da_interop:action:";
-var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-var clone = (v) => JSON.parse(JSON.stringify(v ?? null));
-async function readJson(api, key9, fallback) {
-  try {
-    const raw = await api.pluginStorage.getItem(key9);
-    if (raw === null || raw === void 0 || raw === "") return fallback;
-    return typeof raw === "string" ? JSON.parse(raw) : raw;
-  } catch {
-    return fallback;
-  }
-}
-var writeJson = (api, key9, v) => api.pluginStorage.setItem(key9, JSON.stringify(v));
-async function readInterop(api, id) {
-  const e = await readJson(api, REG + id, null);
-  return e && e.spec === 1 && e.id === id ? e : null;
-}
-var hasAction = (entry, key9) => Array.isArray(entry?.actions) && entry.actions.some((a) => a?.key === key9);
-async function sendAction(api, id, key9, args = null) {
-  const prev = await readJson(api, ACTION + id, null);
-  const reg = await readJson(api, REG + id, null);
-  const rev = Math.max(prev?.rev ?? 0, reg?.actionRev ?? 0) + 1;
-  await writeJson(api, ACTION + id, { rev, key: key9, args: clone(args), updatedAt: Date.now() });
-  return rev;
-}
-async function waitAction(api, id, rev, timeoutMs = 4e3, stepMs = 250) {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    const e = await readJson(api, REG + id, null);
-    if ((e?.actionRev ?? 0) >= rev) return e.actionRev === rev ? { ok: !e.actionError, result: e.actionResult ?? null, error: e.actionError ?? null } : { ok: false, result: null, error: "superseded" };
-    await sleep(stepMs);
-  }
-  return { ok: false, result: null, error: "timeout" };
-}
-async function runAction(api, id, key9, args = null, timeoutMs) {
-  const rev = await sendAction(api, id, key9, args);
-  return waitAction(api, id, rev, timeoutMs);
-}
-
-// src/data/risu64link.js
-var R64_ID = "risu64";
-var R64_ACTION = "obfuscate";
-var WAIT_MS = 1e4;
-var CHECK_MS = 5e3;
-var BACKOFF_MS = 6e4;
-var chain2 = Promise.resolve();
-var ready = { at: 0, ok: false };
-var offUntil = 0;
-async function isReady(api) {
-  if (Date.now() < offUntil) return false;
-  if (Date.now() - ready.at < CHECK_MS) return ready.ok;
-  const e = await readInterop(api, R64_ID).catch(() => null);
-  ready = { at: Date.now(), ok: hasAction(e, R64_ACTION) };
-  return ready.ok;
-}
-var validMsgs = (v) => Array.isArray(v) && v.length > 0 && v.every((m) => m && typeof m.role === "string" && (typeof m.content === "string" || Array.isArray(m.content)));
-async function r64Messages(api, messages) {
-  if (!Array.isArray(messages) || !messages.length || !api?.pluginStorage?.getItem) return messages;
-  if (!await isReady(api)) return messages;
-  const job = chain2.then(async () => {
-    const r = await runAction(api, R64_ID, R64_ACTION, { messages, source: "dusk" }, WAIT_MS).catch((e) => ({ ok: false, error: String(e?.message ?? e) }));
-    if (r?.error === "timeout") offUntil = Date.now() + BACKOFF_MS;
-    const out = Array.isArray(r?.result) ? r.result : r?.result?.messages;
-    if (r?.ok && validMsgs(out)) return out;
-    if (r && !r.ok) console.warn("[Dusk] Risu64 \uB09C\uB3C5\uD654 \uC2E4\uD328, \uC6D0\uBB38\uC73C\uB85C \uBCF4\uB0C4:", r.error);
-    return messages;
-  });
-  chain2 = job.catch(() => {
-  });
-  return job;
-}
-
 // src/engine/runai.js
 var isStream = (v) => v && typeof v === "object" && typeof v.getReader === "function";
 async function drainStream(stream, signal) {
@@ -9029,8 +9196,8 @@ async function drainStream(stream, signal) {
       if (value != null) {
         if (typeof value === "string") text2 += value;
         else if (typeof value === "object") {
-          const k = Object.keys(value)[0];
-          if (k != null && typeof value[k] === "string") whole = value[k];
+          const k2 = Object.keys(value)[0];
+          if (k2 != null && typeof value[k2] === "string") whole = value[k2];
         }
       }
       if (done) break;
@@ -9410,8 +9577,8 @@ function emptyUsage() {
 function addUsage(u, stage, usage) {
   const n = (v) => Number.isFinite(Number(v)) ? Number(v) : 0;
   const inp = n(usage?.inputTokens ?? usage?.input ?? usage?.promptTokens), out = n(usage?.outputTokens ?? usage?.output ?? usage?.completionTokens);
-  const k = stage || "tools", cur = u.by[k] || { calls: 0, input: 0, output: 0 };
-  return { total: { calls: u.total.calls + 1, input: u.total.input + inp, output: u.total.output + out }, by: { ...u.by, [k]: { calls: cur.calls + 1, input: cur.input + inp, output: cur.output + out } } };
+  const k2 = stage || "tools", cur = u.by[k2] || { calls: 0, input: 0, output: 0 };
+  return { total: { calls: u.total.calls + 1, input: u.total.input + inp, output: u.total.output + out }, by: { ...u.by, [k2]: { calls: cur.calls + 1, input: cur.input + inp, output: cur.output + out } } };
 }
 var DEFAULT_BASE_URL = {
   openrouter: "https://openrouter.ai/api/v1",
@@ -9477,8 +9644,8 @@ var MAX_TEXT = 6e4;
 var DEFAULT_REGEX = Object.freeze({ on: false, useChar: true, useModules: true, files: [] });
 var cache = /* @__PURE__ */ new Map();
 var compile = (e) => {
-  const k = e.flag + "/" + e.in;
-  if (cache.has(k)) return cache.get(k);
+  const k2 = e.flag + "/" + e.in;
+  if (cache.has(k2)) return cache.get(k2);
   let r = null;
   try {
     r = new RegExp(e.in, e.flag);
@@ -9486,7 +9653,7 @@ var compile = (e) => {
     r = null;
   }
   if (cache.size > 400) cache.clear();
-  cache.set(k, r);
+  cache.set(k2, r);
   return r;
 };
 function applyRegex(text2, entries) {
@@ -9743,7 +9910,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
     const messages = chat.message ?? [];
     if (group.length === 1 && !isUserMessage(messages[group[0]])) {
       const pre = [];
-      for (let k = group[0] - 1; k >= 0 && pre.length < 3 && isUserMessage(messages[k]); k--) if (extractMessageText(messages[k]).trim()) pre.unshift(k);
+      for (let k2 = group[0] - 1; k2 >= 0 && pre.length < 3 && isUserMessage(messages[k2]); k2--) if (extractMessageText(messages[k2]).trim()) pre.unshift(k2);
       if (pre.length) group = [...pre, group[0]];
     }
     const last = group.at(-1), m = messages[last];
@@ -9774,7 +9941,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
   }
   const coolOf = (g) => g.idx.settings?.inject?.cool !== false ? { now: g.last, eff: effectiveTags } : {};
   function inputOf(g, existing, group) {
-    const recent = g.messages.slice(Math.max(0, group[0] - 6), group[0]).map((mm, k) => line(mm, Math.max(0, group[0] - 6) + k, 1500, g.rx));
+    const recent = g.messages.slice(Math.max(0, group[0] - 6), group[0]).map((mm, k2) => line(mm, Math.max(0, group[0] - 6) + k2, 1500, g.rx));
     return {
       bot: g.character.name,
       known: existing ? knownPeople(existing, 40, group.map((i) => extractMessageText(g.messages[i])).join("\n")) : [],
@@ -9915,7 +10082,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
   async function digestIfNeeded(chaId, chatId, model) {
     const f = await store.getFolder(chaId, chatId);
     if (!f) return false;
-    const pk = Object.keys(f.people).find((k) => needsDigest(f.people[k], f.runs ?? 0));
+    const pk = Object.keys(f.people).find((k2) => needsDigest(f.people[k2], f.runs ?? 0));
     if (!pk) return false;
     const targets = digestTargets(f.people[pk]);
     if (!targets.length) return false;
@@ -10050,7 +10217,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
     const todo = all ? ai : ai.filter((i) => !done.has(hOf(i)));
     const per = batchSize(size);
     const groups = [];
-    for (let k = 0; k < todo.length; k += per) groups.push(todo.slice(k, k + per));
+    for (let k2 = 0; k2 < todo.length; k2 += per) groups.push(todo.slice(k2, k2 + per));
     const chars = groups.reduce((n, g) => n + g.reduce((s, i) => s + extractMessageText(messages[i]).length, 0) + 4e3, 0);
     return { groups, calls: groups.length, tokens: Math.round(chars / 1.5), total: ai.length, done: ai.length - todo.length, todo: todo.length, failed: todo.filter((i) => failedSet.has(hOf(i))).length };
   }
@@ -10160,10 +10327,10 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
           return;
         }
         while (busy < limit && next < groups.length && !signal?.aborted && !streamErr) {
-          const k = next++;
+          const k2 = next++;
           busy++;
           (async () => {
-            if (k > 0 && k % 5 === 0) {
+            if (k2 > 0 && k2 % 5 === 0) {
               try {
                 if (isChatStreaming(await api.getChatFromIndex(charIndex, chatIndex))) throw new Error("\uC751\uB2F5\uC744 \uC0DD\uC131\uD558\uB294 \uC911\uC774\uC5D0\uC694. \uB05D\uB09C \uB4A4 \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
               } catch (e) {
@@ -10171,7 +10338,7 @@ function createMemoryRunner(api, { store, prep = null, prompts = null, afterAnal
                 return;
               }
             }
-            await one2(groups[k]);
+            await one2(groups[k2]);
             if (!signal?.aborted) onProgress?.(++n, groups.length, failed.length);
           })().catch((e) => {
             streamErr ??= e;
@@ -10309,10 +10476,10 @@ function migrateV1(old) {
   for (const f of Object.values(old?.folders ?? {})) {
     if (!f?.charId || f.chatId == null) continue;
     const folder = emptyFolder(f.charId, f.chatId, { botName: f.charName ?? "", chatName: f.chatName ?? "", chatIndex: Number(f.chatIndex) || 0 });
-    for (const [k, person] of Object.entries(f.characters ?? {})) {
-      const key9 = personKey(person?.name ?? k);
+    for (const [k2, person] of Object.entries(f.characters ?? {})) {
+      const key9 = personKey(person?.name ?? k2);
       if (!key9) continue;
-      folder.people[key9] = { name: String(person.name ?? k), aliases: [], pinned: false, records: (person.records ?? []).map((r) => ({
+      folder.people[key9] = { name: String(person.name ?? k2), aliases: [], pinned: false, records: (person.records ?? []).map((r) => ({
         id: r.id || newId("r"),
         at: null,
         h: null,
@@ -10388,11 +10555,11 @@ function parsePotBundle(raw) {
   } else if (v.kind === "risupot-full-backup" || v.kind === "risupot-settings-preset") {
     if (isObj2(v.settings)) out.settings = v.settings;
     out.keysIgnored = isObj2(v.localProviderKeys) ? Object.keys(v.localProviderKeys).length > 0 : !!v.localProviderKeys;
-  } else if (Object.keys(v).some((k) => k.startsWith("risupot."))) {
+  } else if (Object.keys(v).some((k2) => k2.startsWith("risupot."))) {
     const s = parseMaybe(v["risupot.settings"]);
     if (isObj2(s)) out.settings = s;
     out.keysIgnored = v["risupot.provider-keys"] != null;
-    for (const [k, w] of Object.entries(v)) if (k.startsWith("risupot.wiki.v1:")) addScope(w, decodeURIComponent(k.slice(16).split(":")[1] ?? ""));
+    for (const [k2, w] of Object.entries(v)) if (k2.startsWith("risupot.wiki.v1:")) addScope(w, decodeURIComponent(k2.slice(16).split(":")[1] ?? ""));
   } else out.errors.push("\uB9AC\uC218\uD3FF \uBC31\uC5C5\uC774 \uC544\uB2C8\uC5D0\uC694");
   return out;
 }
@@ -10419,13 +10586,13 @@ var DUSK_FOLLOW = Object.freeze({
 });
 var POT_FOLLOW = Object.freeze({ writerSearchExistingLore: { old: [false] } });
 var POT_DEFAULTS = Object.freeze({ writerSearchExistingLore: true });
-var getPath = (o, key9) => key9.split(".").reduce((v, k) => v == null ? void 0 : v[k], o);
+var getPath = (o, key9) => key9.split(".").reduce((v, k2) => v == null ? void 0 : v[k2], o);
 function setPath(o, key9, val) {
   const ks = key9.split("."), last = ks.pop();
   let cur = o;
-  for (const k of ks) {
-    if (cur[k] == null || typeof cur[k] !== "object") cur[k] = {};
-    cur = cur[k];
+  for (const k2 of ks) {
+    if (cur[k2] == null || typeof cur[k2] !== "object") cur[k2] = {};
+    cur = cur[k2];
   }
   cur[last] = val;
 }
@@ -10458,10 +10625,10 @@ var parse2 = (raw) => {
 var wikiDocs = (w) => Object.keys(w?.documents ?? {}).length;
 function createMemoryStoreV3(api, { storage } = {}) {
   const ps = storage ?? api.pluginStorage;
-  const readRetry = async (k) => {
+  const readRetry = async (k2) => {
     for (let n = 0; ; n++) {
       try {
-        return await ps.getItem(k);
+        return await ps.getItem(k2);
       } catch (e) {
         if (n >= 2) throw e;
         await new Promise((r) => setTimeout(r, n ? 1200 : 400));
@@ -10478,44 +10645,44 @@ function createMemoryStoreV3(api, { storage } = {}) {
   };
   const RAW_TTL = 5e3, RAW_MAX = 6;
   const raws = /* @__PURE__ */ new Map();
-  const rawGet = (k) => {
-    const hit = raws.get(k);
+  const rawGet = (k2) => {
+    const hit = raws.get(k2);
     if (hit && Date.now() - hit.t < RAW_TTL) return hit.p;
     const ent = { t: Date.now(), p: null };
-    ent.p = readRetry(k).then((r) => {
-      if (typeof r !== "string" && raws.get(k) === ent) raws.delete(k);
+    ent.p = readRetry(k2).then((r) => {
+      if (typeof r !== "string" && raws.get(k2) === ent) raws.delete(k2);
       return r;
     }, (e) => {
-      if (raws.get(k) === ent) raws.delete(k);
+      if (raws.get(k2) === ent) raws.delete(k2);
       throw e;
     });
-    raws.delete(k);
-    raws.set(k, ent);
+    raws.delete(k2);
+    raws.set(k2, ent);
     while (raws.size > RAW_MAX) raws.delete(raws.keys().next().value);
     return ent.p;
   };
-  const get = async (k) => parse2(await rawGet(k));
+  const get = async (k2) => parse2(await rawGet(k2));
   const sizeMB = (str) => (str.length * 2 / 1048576).toFixed(2);
-  const set = async (k, v) => {
-    raws.delete(k);
+  const set = async (k2, v) => {
+    raws.delete(k2);
     const body = JSON.stringify(v);
-    const sized = (why) => Object.assign(new Error(`${why} \u2014 ${k} \uC57D ${sizeMB(body)}MB`), { key: k, bytes: body.length * 2 });
+    const sized = (why) => Object.assign(new Error(`${why} \u2014 ${k2} \uC57D ${sizeMB(body)}MB`), { key: k2, bytes: body.length * 2 });
     try {
       let r;
       try {
-        r = await ps.setItem(k, body);
+        r = await ps.setItem(k2, body);
       } catch (e) {
         throw sized(`\uC800\uC7A5\uC18C\uC5D0 \uC4F0\uC9C0 \uBABB\uD588\uC5B4\uC694: ${e?.message ?? e}`);
       }
       if (r === false) throw sized("\uC800\uC7A5\uC18C\uC5D0 \uC4F0\uC9C0 \uBABB\uD588\uC5B4\uC694(\uC6A9\uB7C9 \uBD80\uC871 \uB610\uB294 \uAD8C\uD55C)");
       return r;
     } finally {
-      raws.delete(k);
+      raws.delete(k2);
     }
   };
-  const rm = (k) => {
-    raws.delete(k);
-    return ps.removeItem(k);
+  const rm = (k2) => {
+    raws.delete(k2);
+    return ps.removeItem(k2);
   };
   const withFollow = (idx) => {
     idx.settings.edited = followDefaults(idx.settings, DEFAULT_SETTINGS, idx.settings.edited, DUSK_FOLLOW);
@@ -10586,15 +10753,15 @@ function createMemoryStoreV3(api, { storage } = {}) {
       const empty = (v) => v == null || v === "" || (Array.isArray(v) ? !v.length : typeof v === "object" && !Object.keys(v).length);
       const plain = (v) => v && typeof v === "object" && !Array.isArray(v);
       let moved = false;
-      for (const [k, ov] of Object.entries(old)) {
-        if (["v", "chaId", "chatId", "adoptedFrom"].includes(k) || empty(ov)) continue;
-        const cv = cur[k];
+      for (const [k2, ov] of Object.entries(old)) {
+        if (["v", "chaId", "chatId", "adoptedFrom"].includes(k2) || empty(ov)) continue;
+        const cv = cur[k2];
         if (empty(cv)) {
-          cur[k] = ov;
+          cur[k2] = ov;
           moved = true;
           continue;
         }
-        if (k === "wiki") continue;
+        if (k2 === "wiki") continue;
         if (plain(cv) && plain(ov)) {
           for (const [sk, sv] of Object.entries(ov)) if (!(sk in cv)) {
             cv[sk] = sv;
@@ -10699,7 +10866,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.31" : "dev";
+var ENGINE_VERSION = true ? "2.2.32" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
