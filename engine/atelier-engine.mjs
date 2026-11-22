@@ -1,4 +1,4 @@
-// Dusk Atelier v2.2.36 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
+// Dusk Atelier v2.2.37 분석 엔진(빌드 결과물, 직접 고치지 마세요). 만든 곳: Atelier tools/build-cellar-engine.mjs
 // 라이선스: Dusk Atelier 라이선스(저장소 LICENSE)
 
 // src/engine/chattext.js
@@ -8254,6 +8254,8 @@ var EXTRA_STAGE1 = [
   "item|name|one Korean line|owner or none      notable object or gift",
   "faction|name|one Korean line|members      group or family"
 ].join("\n");
+var CUM_STAGE1 = "\ncum|Receiver|Giver|inside, anal, mouth or outside|ml (number; one normal climax 3-5)|none, condom, pill, iud, afterpill, pullout or broke      each ejaculation in newest (also when only implied, e.g. a fade-out ending inside her)";
+var MARK_STAGE1 = "\nmark|Name|body part|trace (hickey, bite, bruise\u2026) in Korean|days 1-14      a visible trace newly left on a body" + CUM_STAGE1;
 var OUTFIT_PARTS = Object.freeze([["head", "\uBA38\uB9AC"], ["face", "\uC5BC\uAD74"], ["outer", "\uAC89\uC637"], ["top", "\uC0C1\uC758"], ["bra", "\uC18D\uC637(\uC704)"], ["bottom", "\uD558\uC758"], ["panties", "\uC18D\uC637(\uC544\uB798)"], ["legs", "\uB2E4\uB9AC"], ["feet", "\uC2E0\uBC1C"], ["acc", "\uC561\uC138\uC11C\uB9AC"]]);
 var OUTFIT_LABEL = Object.freeze(Object.fromEntries(OUTFIT_PARTS));
 var WEATHER_STAGE1 = "\nweather|\uB9D1\uC74C, \uAD6C\uB984, \uD750\uB9BC, \uBE44, \uD3ED\uC6B0, \uB208, \uC548\uAC1C, \uCC9C\uB465, \uBC14\uB78C or \uC2E4\uB0B4      the weather in newest's scene when it is shown or changes (also when {{user}}'s input changes it)" + CLIMATE_STAGE1 + CAL_STAGE1;
@@ -8309,8 +8311,10 @@ var NSFW_LITE_STAGE1 = [
   "sex|Name|m or f|exact quote      ONLY when newest shows Name's body sex actually changing (transformation, magic, curse, gender swap); never for clothing, roleplay or a guess",
   "Name may be {{user}} too when newest or the user message clearly shows it (record only what {{user}} already did or said; never invent it).",
   "gauge|Name|lust or fatigue|+n or -n (max 30)|exact quote      arousal never rises on its own \u2014 write lust only when newest moves this character's arousal; fatigue for real exertion or rest",
-  "sleep|Name"
-].join("\n");
+  "sleep|Name",
+  // 11-22 버그리포트: 과거 경험·체내 정액량이 하나도 안 쌓였다 — 둘 다 성적인 낱말이 있는 응답에서만 물었다(2.2.30). 과거 경험은 평범한 대화에서 나온다
+  "past|Name|partner|count|stated or estimated      they had sex before the story (newest, user message or lorebook); estimate the count when none is given"
+].join("\n") + CUM_STAGE1;
 var NSFW_STAGE1 = [
   "",
   "",
@@ -10866,7 +10870,7 @@ function createMemoryStoreV3(api, { storage } = {}) {
 }
 
 // src/cellar/node-entry.js
-var ENGINE_VERSION = true ? "2.2.36" : "dev";
+var ENGINE_VERSION = true ? "2.2.37" : "dev";
 export {
   ENGINE_VERSION,
   FOLDER_PREFIX2 as FOLDER_PREFIX,
