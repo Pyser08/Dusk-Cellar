@@ -73,6 +73,49 @@ node Dusk-Cellar/cellar-start.cjs -- --port 6001   # -- 뒤는 리스에 그대�
 - Cellar만 죽으면 Cellar만 다시 켜요(최대 5번).
 - 리스 파일은 읽지도 고치지도 않아요. Cellar 데이터는 `Dusk-Cellar/dusk-data/`에만 써요.
 
+## 도커로 붙이기 (리스가 컨테이너일 때)
+
+리스를 도커로 돌린다면 Cellar를 **리스 컨테이너의 네트워크에 붙은 옆 컨테이너(사이드카)** 로 켜요. 플러그인은 리스 서버의 프록시를 거쳐 `127.0.0.1:6011`로 오고, Cellar는 같은 기기(loopback) 요청만 토큰 없이 받기 때문에 **리스 컨테이너와 네트워크를 같이 써야**(`network_mode: service:<리스>`) 설정 없이 '연결됨'이 돼요.
+
+```yaml
+services:
+  pocketrisu:                         # 지금 쓰는 리스 서비스(이름·이미지는 그대로)
+    image: ghcr.io/pocketrisu/pocketrisu:latest
+    ports: ["6001:6001"]
+    volumes:
+      - ./save:/app/save
+
+  dusk-cellar:
+    image: ghcr.io/pyser08/dusk-cellar:latest   # 또는 build: ./Dusk-Cellar
+    network_mode: service:pocketrisu  # 리스와 같은 네트워크(포트는 따로 열지 않아요)
+    depends_on: [pocketrisu]
+    environment:
+      CELLAR_RISU_PORT: 6001          # 리스 컨테이너 안의 포트(PocketRisu 6001, RisuBard 7777)
+      CELLAR_KEEP: 5                  # 백업 보관 개수
+    volumes:
+      - ./save:/save                  # 리스와 같은 세이브 폴더
+      - ./dusk-data:/data             # Cellar 데이터(기억·백업)
+    restart: unless-stopped
+```
+
+| 환경변수 | 뜻 |
+|---|---|
+| `CELLAR_PORT` | Cellar 포트 (기본 6011) |
+| `CELLAR_HOST` | 듣는 주소 (기본 `127.0.0.1`, 사이드카면 그대로) |
+| `CELLAR_SAVE_DIR` | 컨테이너 안 세이브 폴더 (기본 `/save`, 비우면 백업·플러그인·에셋 끔) |
+| `CELLAR_RISU_PORT` | 리스 서버 포트 (비우면 Cellar 기본값 7777 → 6001 순서로 찾음) |
+| `CELLAR_KEEP` | 백업 보관 개수 (기본 5) |
+| `CELLAR_HOST_DIR` | msgpackr·fflate를 찾을 폴더 (옛 형식 database.bin을 풀 때, 기본 `/opt/risu-host` — 이미지에 PocketRisu와 같은 버전이 들어 있어요) |
+| `CELLAR_REQUIRE_TOKEN` | `1`이면 loopback 요청에도 토큰 요구 |
+
+- 이미지 안에서는 실행기 없이 Cellar 서버만 돌아요. 그래서 **화면에서 복원(`restore`)과 자체 업데이트(`/cellar/update`)는 안 돼요**(각각 `409`·`501`). 백업 만들기·목록·지우기와 기억·에셋·플러그인 기능은 그대로예요.
+  - 복원은 손으로: 리스 컨테이너를 멈추고 → `dusk-data/backups/<id>/save`를 세이브 폴더로 복사(SQLite면 `-wal`·`-shm` 지우기) → 다시 켜기.
+  - 업데이트는 이미지를 새로 받아서(`docker compose pull dusk-cellar && docker compose up -d dusk-cellar`).
+- 리스 컨테이너를 **다시 만들거나 재시작하면** Cellar도 다시 켜 주세요(`docker compose up -d dusk-cellar` 또는 `docker restart dusk-cellar`). 붙어 있던 네트워크가 사라지기 때문이에요.
+- SQLite 세이브(PocketRisu `risuai.db`)는 백업마다 통째로 복사돼요. 세이브가 크면 `dusk-data`를 넉넉한 디스크에 두고 `CELLAR_KEEP`을 줄이세요.
+- 컨테이너는 root로 돌아요. 리스 컨테이너가 root로 쓴 세이브(SQLite `-shm` 포함)를 읽어야 해서예요.
+- 이미지는 `.github/workflows/docker.yml`이 main·`v*` 태그마다 `ghcr.io/<소유자>/dusk-cellar`(amd64·arm64)로 올려요. 직접 만들려면 `docker build -t dusk-cellar .`
+
 ## 기억 저장소 (`/cellar/mem`)
 
 플러그인이 서버를 감지하면 장기기억을 여기에만 보내요(플러그인 안에는 저장하지 않고, 연결이 끊긴 동안만 임시로 쌓아 두었다가 다시 올려요).
